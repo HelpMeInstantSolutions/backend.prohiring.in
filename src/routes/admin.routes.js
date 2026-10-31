@@ -28,5 +28,7 @@ router.delete('/jobs/:id', adminController.deleteJob);
 // Dynamic System Settings (Change App Name, Branding, Contact Info)
 router.get('/settings', configController.getAllSettings);
 router.put('/settings', configController.updateSettings);
+router.post('/settings/test-mail', configController.testMail);
+router.post('/settings/test-sms', configController.testSms);
 
 module.exports = router;

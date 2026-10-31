@@ -141,7 +141,23 @@ CREATE TABLE IF NOT EXISTS `notifications` (
   FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- 9. OTP Verification Table
+CREATE TABLE IF NOT EXISTS `otps` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `email` VARCHAR(255) DEFAULT NULL,
+  `phone` VARCHAR(50) DEFAULT NULL,
+  `email_otp` VARCHAR(10) DEFAULT NULL,
+  `phone_otp` VARCHAR(10) DEFAULT NULL,
+  `type` ENUM('registration', 'login', 'reset_password') DEFAULT 'registration',
+  `is_verified` BOOLEAN DEFAULT 0,
+  `expires_at` DATETIME NOT NULL,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_email (`email`),
+  INDEX idx_phone (`phone`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- Indexes for ultra-fast query performance
 CREATE INDEX idx_jobs_subject_city ON `jobs` (`subject`, `city`, `status`);
 CREATE INDEX idx_jobs_status ON `jobs` (`status`);
 CREATE INDEX idx_users_role ON `users` (`role`, `status`);
+

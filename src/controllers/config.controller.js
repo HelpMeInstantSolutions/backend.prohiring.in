@@ -97,8 +97,58 @@ const updateSettings = async (req, res) => {
   }
 };
 
+// POST /api/v1/admin/settings/test-mail
+const testMail = async (req, res) => {
+  try {
+    const { email, host, port, secure, user, pass, fromEmail, fromName } = req.body;
+    if (!email) {
+      return res.status(400).json({ success: false, message: 'Recipient email is required for testing.' });
+    }
+
+    const { sendTestMail } = require('../services/otp.service');
+    const result = await sendTestMail(email, { host, port, secure, user, pass, fromEmail, fromName });
+    return res.status(200).json({
+      success: true,
+      message: `Test email dispatched successfully to ${email}.`,
+      data: result
+    });
+  } catch (error) {
+    console.error('testMail Error:', error);
+    return res.status(400).json({
+      success: false,
+      message: `SMTP test failed: ${error.message}`
+    });
+  }
+};
+
+// POST /api/v1/admin/settings/test-sms
+const testSms = async (req, res) => {
+  try {
+    const { phone } = req.body;
+    if (!phone) {
+      return res.status(400).json({ success: false, message: 'Recipient phone number is required.' });
+    }
+
+    const { sendTestSms } = require('../services/otp.service');
+    const result = await sendTestSms(phone);
+    return res.status(200).json({
+      success: true,
+      message: `Test SMS/WhatsApp dispatched to ${phone}. Provider: ${result.provider}.`,
+      data: result
+    });
+  } catch (error) {
+    console.error('testSms Error:', error);
+    return res.status(400).json({
+      success: false,
+      message: `SMS test failed: ${error.message}`
+    });
+  }
+};
+
 module.exports = {
   getPublicSettings,
   getAllSettings,
-  updateSettings
+  updateSettings,
+  testMail,
+  testSms
 };

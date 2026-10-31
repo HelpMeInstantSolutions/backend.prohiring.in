@@ -1,6 +1,7 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { query, getTransactionConnection } = require('../config/database');
+const { dispatchSms, dispatchEmail, sanitizePhone } = require('../services/otp.service');
 
 const generateToken = (user) => {
   const secret = process.env.JWT_SECRET || 'prohiring_super_secure_jwt_secret_key_2026_change_in_production';
@@ -12,17 +13,140 @@ const generateToken = (user) => {
   );
 };
 
+// POST /api/v1/auth/send-registration-otp
+const sendRegistrationOtp = async (req, res) => {
+  try {
+    const { email, phone, fullName } = req.body;
+
+    if (!email || !phone) {
+      return res.status(400).json({
+        success: false,
+        message: 'Both email address and mobile number are required.'
+      });
+    }
+
+    const cleanEmail = email.toLowerCase().trim();
+    const cleanPhone = sanitizePhone(phone);
+
+    if (cleanPhone.length < 10) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please enter a valid 10-digit mobile number.'
+      });
+    }
+
+    // Check existing email
+    const existingEmail = await query('SELECT id FROM users WHERE email = ?', [cleanEmail]);
+    if (existingEmail.length > 0) {
+      return res.status(409).json({
+        success: false,
+        message: 'An account with this email address already exists. Please log in.'
+      });
+    }
+
+    // Generate 6-digit OTPs
+    const phoneOtp = Math.floor(100000 + Math.random() * 900000).toString();
+    const emailOtp = Math.floor(100000 + Math.random() * 900000).toString();
+
+    // Store in otps table
+    await query(
+      `INSERT INTO otps (email, phone, email_otp, phone_otp, type, expires_at)
+       VALUES (?, ?, ?, ?, 'registration', DATE_ADD(NOW(), INTERVAL 10 MINUTE))`,
+      [cleanEmail, cleanPhone, emailOtp, phoneOtp]
+    );
+
+    // Send SMS / WhatsApp OTP
+    const smsResult = await dispatchSms(cleanPhone, phoneOtp);
+
+    // Send Email OTP
+    const emailResult = await dispatchEmail(cleanEmail, emailOtp);
+
+    return res.status(200).json({
+      success: true,
+      message: 'Verification codes sent to your Phone/WhatsApp and Email address.',
+      data: {
+        smsProvider: smsResult.provider,
+        emailProvider: emailResult.provider,
+        simulated: (smsResult.simulated || emailResult.simulated) ? true : false,
+        debugOtp: (smsResult.simulated || emailResult.simulated) ? { phoneOtp, emailOtp } : undefined
+      }
+    });
+  } catch (error) {
+    console.error('sendRegistrationOtp Error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to send verification codes: ' + error.message
+    });
+  }
+};
+
 // POST /api/v1/auth/register-teacher
 const registerTeacher = async (req, res) => {
   let connection;
   try {
-    const { email, password, fullName, phone, highestQualification, primarySubject } = req.body;
+    const { email, password, confirmPassword, fullName, phone, highestQualification, primarySubject, emailOtp, phoneOtp } = req.body;
 
     if (!email || !password || !fullName) {
       return res.status(400).json({
         success: false,
         message: 'Email, password, and full name are required.'
       });
+    }
+
+    if (confirmPassword && password !== confirmPassword) {
+      return res.status(400).json({
+        success: false,
+        message: 'Set Password and Confirm Password do not match.'
+      });
+    }
+
+    // Check if OTP verification is required in system_settings
+    const otpSettings = await query("SELECT setting_value FROM system_settings WHERE setting_key = 'require_otp_verification' LIMIT 1");
+    const isOtpRequired = !otpSettings.length || otpSettings[0].setting_value === 'true';
+
+    if (isOtpRequired) {
+      if (!emailOtp && !phoneOtp) {
+        return res.status(400).json({
+          success: false,
+          message: 'Verification code is required. Please verify your phone and email.'
+        });
+      }
+
+      // Verify OTP from otps table
+      const otpRecords = await query(
+        `SELECT * FROM otps 
+         WHERE email = ? AND is_verified = 0 AND expires_at > NOW() 
+         ORDER BY id DESC LIMIT 1`,
+        [email.toLowerCase().trim()]
+      );
+
+      if (otpRecords.length === 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'Verification code has expired or was not requested. Please request a new OTP.'
+        });
+      }
+
+      const activeOtp = otpRecords[0];
+
+      // Verify email OTP if provided
+      if (emailOtp && String(emailOtp).trim() !== activeOtp.email_otp) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid Email verification code.'
+        });
+      }
+
+      // Verify phone OTP if provided
+      if (phoneOtp && String(phoneOtp).trim() !== activeOtp.phone_otp) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid Phone verification code.'
+        });
+      }
+
+      // Mark OTP verified
+      await query('UPDATE otps SET is_verified = 1 WHERE id = ?', [activeOtp.id]);
     }
 
     // Check existing email
@@ -270,6 +394,7 @@ const getMe = async (req, res) => {
 };
 
 module.exports = {
+  sendRegistrationOtp,
   registerTeacher,
   registerSchool,
   login,

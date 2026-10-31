@@ -18,7 +18,20 @@ async function seedDatabase() {
       ['allow_teacher_registration', 'true', 'system', 'Allow new teachers to register', 0],
       ['allow_school_registration', 'true', 'system', 'Allow new schools to register', 0],
       ['require_school_verification', 'true', 'system', 'Require admin review before school posts jobs', 0],
-      ['android_min_version', '1.0.0', 'app', 'Minimum required Android app version', 1]
+      ['require_otp_verification', 'true', 'system', 'Require OTP verification for registration', 0],
+      ['android_min_version', '1.0.0', 'app', 'Minimum required Android app version', 1],
+      ['smtp_host', 'smtp.gmail.com', 'smtp', 'SMTP server host', 0],
+      ['smtp_port', '587', 'smtp', 'SMTP port (587 for TLS, 465 for SSL)', 0],
+      ['smtp_secure', 'false', 'smtp', 'Use SSL (true for 465, false for 587)', 0],
+      ['smtp_user', '', 'smtp', 'SMTP username or email address', 0],
+      ['smtp_pass', '', 'smtp', 'SMTP password or app password', 0],
+      ['smtp_from_email', 'noreply@prohiring.in', 'smtp', 'From email address', 0],
+      ['smtp_from_name', 'ProHiring Recruitment', 'smtp', 'From display name', 0],
+      ['autosmshub_api_key', '5062b348cd2829cbe17999155eb1a560e52b346c29e0ca1aaf55e88f19d08f1c', 'sms', 'AutoMsgHub API Key for WhatsApp OTP', 0],
+      ['autosmshub_template_name', 'general_otp_verification', 'sms', 'WhatsApp OTP template name', 0],
+      ['autosmshub_template_language', 'en', 'sms', 'WhatsApp OTP template language', 0],
+      ['fast2sms_api_key', '', 'sms', 'Fast2SMS API Key fallback', 0],
+      ['two_factor_api_key', '', 'sms', '2Factor.in API Key fallback', 0]
     ];
 
     for (const [key, val, cat, desc, isPub] of defaultSettings) {
