@@ -1,0 +1,8 @@
+const express = require('express');
+const router = express.Router();
+const configController = require('../controllers/config.controller');
+
+// Public route to get platform branding (app_name, tagline, theme colors, etc.)
+router.get('/app-settings', configController.getPublicSettings);
+
+module.exports = router;
