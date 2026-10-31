@@ -38,7 +38,7 @@ async function seedDatabase() {
       await query(
         `INSERT INTO system_settings (setting_key, setting_value, category, description, is_public)
          VALUES (?, ?, ?, ?, ?)
-         ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value), description = VALUES(description)`,
+         ON DUPLICATE KEY UPDATE description = VALUES(description)`,
         [key, val, cat, desc, isPub]
       );
     }
