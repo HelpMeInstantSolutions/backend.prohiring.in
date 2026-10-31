@@ -11,12 +11,20 @@ router.use(authenticate, authorize('admin'));
 // Platform metrics
 router.get('/dashboard-stats', adminController.getDashboardStats);
 
-// School approvals & verification
+// School management (List, Add, Edit, Delete, Verify)
 router.get('/schools', adminController.getSchools);
+router.post('/schools', adminController.createSchool);
+router.put('/schools/:id', adminController.updateSchool);
+router.delete('/schools/:id', adminController.deleteSchool);
 router.put('/schools/:id/verification', adminController.updateSchoolVerification);
 
-// Teachers management
+// Teachers management (List, Edit, Delete)
 router.get('/teachers', adminController.getTeachers);
+router.put('/teachers/:id', adminController.updateTeacher);
+router.delete('/teachers/:id', adminController.deleteTeacher);
+
+// Impersonation (Login as School / Login as Teacher without password)
+router.post('/impersonate', adminController.impersonateUser);
 
 // User status toggles (active/suspended)
 router.put('/users/:id/status', adminController.toggleUserStatus);
