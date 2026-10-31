@@ -1,3 +1,5 @@
+const path = require('path');
+const fs = require('fs');
 const { query } = require('../config/database');
 
 // GET /api/v1/teacher/profile
@@ -13,9 +15,25 @@ const getProfile = async (req, res) => {
       });
     }
 
+    const row = rows[0];
+
+    // Safely parse JSON fields if stored as string
+    const safeParse = (val) => {
+      if (!val) return null;
+      if (typeof val === 'object') return val;
+      try { return JSON.parse(val); } catch (e) { return null; }
+    };
+
     return res.status(200).json({
       success: true,
-      data: rows[0]
+      data: {
+        ...row,
+        family_details: safeParse(row.family_details),
+        qualifications_data: safeParse(row.qualifications_data),
+        previous_jobs_data: safeParse(row.previous_jobs_data),
+        current_job_data: safeParse(row.current_job_data),
+        tet_details: safeParse(row.tet_details)
+      }
     });
   } catch (error) {
     console.error('getProfile Error:', error);
@@ -35,6 +53,10 @@ const updateProfile = async (req, res) => {
       phone,
       gender,
       dob,
+      address,
+      pincode,
+      languages,
+      headline,
       highestQualification,
       specialization,
       experienceYears,
@@ -44,11 +66,24 @@ const updateProfile = async (req, res) => {
       currentState,
       expectedSalaryMin,
       expectedSalaryMax,
-      bio
+      bio,
+      familyDetails,
+      qualificationsData,
+      previousJobsData,
+      currentJobData,
+      tetDetails,
+      profileStep
     } = req.body;
 
+    const serialize = (val) => {
+      if (val === undefined) return null;
+      if (val === null) return null;
+      if (typeof val === 'string') return val;
+      return JSON.stringify(val);
+    };
+
     // Check completion criteria
-    const isCompleted = !!(fullName && phone && highestQualification && primarySubject && currentCity);
+    const isCompleted = !!(fullName && phone && primarySubject && currentCity && qualificationsData);
 
     await query(
       `UPDATE teacher_profiles 
@@ -56,6 +91,10 @@ const updateProfile = async (req, res) => {
            phone = COALESCE(?, phone),
            gender = COALESCE(?, gender),
            dob = COALESCE(?, dob),
+           address = COALESCE(?, address),
+           pincode = COALESCE(?, pincode),
+           languages = COALESCE(?, languages),
+           headline = COALESCE(?, headline),
            highest_qualification = COALESCE(?, highest_qualification),
            specialization = COALESCE(?, specialization),
            experience_years = COALESCE(?, experience_years),
@@ -66,12 +105,21 @@ const updateProfile = async (req, res) => {
            expected_salary_min = COALESCE(?, expected_salary_min),
            expected_salary_max = COALESCE(?, expected_salary_max),
            bio = COALESCE(?, bio),
+           family_details = COALESCE(?, family_details),
+           qualifications_data = COALESCE(?, qualifications_data),
+           previous_jobs_data = COALESCE(?, previous_jobs_data),
+           current_job_data = COALESCE(?, current_job_data),
+           tet_details = COALESCE(?, tet_details),
+           profile_step = COALESCE(?, profile_step),
            is_profile_completed = ?
        WHERE user_id = ?`,
       [
-        fullName, phone, gender, dob, highestQualification, specialization,
-        experienceYears, primarySubject, secondarySubjects, currentCity, currentState,
-        expectedSalaryMin, expectedSalaryMax, bio, isCompleted ? 1 : 0, userId
+        fullName, phone, gender, dob, address, pincode, languages, headline,
+        highestQualification, specialization, experienceYears, primarySubject, secondarySubjects,
+        currentCity, currentState, expectedSalaryMin, expectedSalaryMax, bio,
+        serialize(familyDetails), serialize(qualificationsData), serialize(previousJobsData),
+        serialize(currentJobData), serialize(tetDetails), profileStep || 1,
+        isCompleted ? 1 : 0, userId
       ]
     );
 
@@ -86,7 +134,46 @@ const updateProfile = async (req, res) => {
     console.error('updateProfile Error:', error);
     return res.status(500).json({
       success: false,
-      message: 'Failed to update profile.'
+      message: 'Failed to update profile: ' + error.message
+    });
+  }
+};
+
+// POST /api/v1/teacher/upload-avatar
+const uploadAvatar = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    let avatarUrl = '';
+
+    if (req.file) {
+      avatarUrl = `/uploads/avatars/${req.file.filename}`;
+    } else if (req.body.avatarBase64) {
+      const base64Data = req.body.avatarBase64.replace(/^data:image\/\w+;base64,/, '');
+      const buffer = Buffer.from(base64Data, 'base64');
+      const filename = `avatar-${userId}-${Date.now()}.jpg`;
+      const avatarsDir = path.join(__dirname, '../../uploads/avatars');
+      if (!fs.existsSync(avatarsDir)) fs.mkdirSync(avatarsDir, { recursive: true });
+      fs.writeFileSync(path.join(avatarsDir, filename), buffer);
+      avatarUrl = `/uploads/avatars/${filename}`;
+    } else {
+      return res.status(400).json({
+        success: false,
+        message: 'No avatar image file or base64 data provided.'
+      });
+    }
+
+    await query('UPDATE teacher_profiles SET avatar_url = ? WHERE user_id = ?', [avatarUrl, userId]);
+
+    return res.status(200).json({
+      success: true,
+      message: 'Profile picture cropped and updated successfully!',
+      data: { avatarUrl }
+    });
+  } catch (error) {
+    console.error('uploadAvatar Error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to upload profile picture.'
     });
   }
 };
@@ -352,6 +439,7 @@ const getTeacherDashboard = async (req, res) => {
 module.exports = {
   getProfile,
   updateProfile,
+  uploadAvatar,
   uploadResume,
   applyToJob,
   getMyApplications,
