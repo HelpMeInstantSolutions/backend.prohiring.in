@@ -112,13 +112,47 @@ app.use((err, req, res, next) => {
   });
 });
 
+// Auto-migrate missing columns for teacher_profiles on startup
+async function autoMigrateColumns() {
+  try {
+    const columnsToEnsure = [
+      ['address', 'TEXT DEFAULT NULL'],
+      ['pincode', 'VARCHAR(20) DEFAULT NULL'],
+      ['languages', 'VARCHAR(255) DEFAULT NULL'],
+      ['headline', 'VARCHAR(255) DEFAULT NULL'],
+      ['family_details', 'LONGTEXT DEFAULT NULL'],
+      ['qualifications_data', 'LONGTEXT DEFAULT NULL'],
+      ['previous_jobs_data', 'LONGTEXT DEFAULT NULL'],
+      ['current_job_data', 'LONGTEXT DEFAULT NULL'],
+      ['tet_details', 'LONGTEXT DEFAULT NULL'],
+      ['profile_step', 'INT DEFAULT 1']
+    ];
+
+    for (const [colName, colDef] of columnsToEnsure) {
+      const [existing] = await pool.query(
+        `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS 
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'teacher_profiles' AND COLUMN_NAME = ?`,
+        [colName]
+      );
+      if (existing.length === 0) {
+        console.log(`[Auto-Migrate] Adding column '${colName}' to teacher_profiles...`);
+        await pool.query(`ALTER TABLE \`teacher_profiles\` ADD COLUMN \`${colName}\` ${colDef};`);
+      }
+    }
+    console.log('[Auto-Migrate] Teacher profile columns verified successfully.');
+  } catch (err) {
+    console.warn('[Auto-Migrate] Column check warning:', err.message);
+  }
+}
+
 // Start Server
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log(`===============================================`);
   console.log(` ProHiring Backend API running on port ${PORT}`);
   console.log(` Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(` Health check: http://localhost:${PORT}/api/health`);
   console.log(`===============================================`);
+  await autoMigrateColumns();
 });
 
 module.exports = app;
