@@ -70,16 +70,20 @@ const updateSettings = async (req, res) => {
       for (const item of settings) {
         if (item.key && item.value !== undefined) {
           await query(
-            'UPDATE system_settings SET setting_value = ? WHERE setting_key = ?',
-            [String(item.value), item.key]
+            `INSERT INTO system_settings (setting_key, setting_value)
+             VALUES (?, ?)
+             ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)`,
+            [item.key, String(item.value)]
           );
         }
       }
     } else if (typeof settings === 'object') {
       for (const [key, value] of Object.entries(settings)) {
         await query(
-          'UPDATE system_settings SET setting_value = ? WHERE setting_key = ?',
-          [String(value), key]
+          `INSERT INTO system_settings (setting_key, setting_value)
+           VALUES (?, ?)
+           ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)`,
+          [key, String(value)]
         );
       }
     }
