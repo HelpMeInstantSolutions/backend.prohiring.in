@@ -736,6 +736,236 @@ const deleteTeacher = async (req, res) => {
   }
 };
 
+// GET /api/v1/admin/taxonomy - Complete taxonomy tree including inactive items
+const getAdminTaxonomy = async (req, res) => {
+  try {
+    const categories = await query('SELECT * FROM job_categories ORDER BY sort_order ASC, name ASC');
+    const designations = await query('SELECT * FROM job_designations ORDER BY sort_order ASC, name ASC');
+    const subjects = await query('SELECT * FROM job_subjects ORDER BY sort_order ASC, name ASC');
+
+    const subjectsByDesig = {};
+    subjects.forEach((s) => {
+      if (!subjectsByDesig[s.designation_id]) subjectsByDesig[s.designation_id] = [];
+      subjectsByDesig[s.designation_id].push(s);
+    });
+
+    const desigsByCat = {};
+    designations.forEach((d) => {
+      d.subjects = subjectsByDesig[d.id] || [];
+      if (!desigsByCat[d.category_id]) desigsByCat[d.category_id] = [];
+      desigsByCat[d.category_id].push(d);
+    });
+
+    const tree = categories.map((c) => ({
+      ...c,
+      designations: desigsByCat[c.id] || []
+    }));
+
+    return res.status(200).json({ success: true, data: tree });
+  } catch (error) {
+    console.error('getAdminTaxonomy Error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to retrieve taxonomy.' });
+  }
+};
+
+// POST /api/v1/admin/categories - Create Post / Staff Type
+const createCategory = async (req, res) => {
+  try {
+    const { name, slug, description, sortOrder = 0 } = req.body;
+    if (!name || !name.trim()) {
+      return res.status(400).json({ success: false, message: 'Category/Post name is required.' });
+    }
+    const cleanSlug = slug && slug.trim() ? slug.trim().toLowerCase() : name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-');
+    const result = await query(
+      'INSERT INTO job_categories (name, slug, description, sort_order) VALUES (?, ?, ?, ?)',
+      [name.trim(), cleanSlug, description || null, sortOrder]
+    );
+    return res.status(201).json({
+      success: true,
+      message: `Category "${name.trim()}" created successfully.`,
+      data: { id: result.insertId, name: name.trim(), slug: cleanSlug }
+    });
+  } catch (error) {
+    console.error('createCategory Error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to create category: ' + error.message });
+  }
+};
+
+// PUT /api/v1/admin/categories/:id - Update Post / Staff Type
+const updateCategory = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, slug, description, sortOrder, isActive } = req.body;
+    await query(
+      `UPDATE job_categories SET
+        name = COALESCE(?, name),
+        slug = COALESCE(?, slug),
+        description = COALESCE(?, description),
+        sort_order = COALESCE(?, sort_order),
+        is_active = COALESCE(?, is_active)
+      WHERE id = ?`,
+      [
+        name ? name.trim() : null,
+        slug ? slug.trim() : null,
+        description !== undefined ? description : null,
+        sortOrder !== undefined ? sortOrder : null,
+        isActive !== undefined ? (isActive ? 1 : 0) : null,
+        id
+      ]
+    );
+    return res.status(200).json({ success: true, message: 'Category updated successfully.' });
+  } catch (error) {
+    console.error('updateCategory Error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to update category: ' + error.message });
+  }
+};
+
+// DELETE /api/v1/admin/categories/:id
+const deleteCategory = async (req, res) => {
+  try {
+    const { id } = req.params;
+    await query('DELETE FROM job_categories WHERE id = ?', [id]);
+    return res.status(200).json({ success: true, message: 'Category and all associated designations deleted.' });
+  } catch (error) {
+    console.error('deleteCategory Error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to delete category: ' + error.message });
+  }
+};
+
+// POST /api/v1/admin/designations - Add Designation under Post
+const createDesignation = async (req, res) => {
+  try {
+    const { categoryId, name, code, description, sortOrder = 0 } = req.body;
+    if (!categoryId || !name || !name.trim()) {
+      return res.status(400).json({ success: false, message: 'Category ID and Designation Name are required.' });
+    }
+    const result = await query(
+      'INSERT INTO job_designations (category_id, name, code, description, sort_order) VALUES (?, ?, ?, ?, ?)',
+      [categoryId, name.trim(), code ? code.trim() : null, description || null, sortOrder]
+    );
+    return res.status(201).json({
+      success: true,
+      message: `Designation "${name.trim()}" created successfully.`,
+      data: { id: result.insertId, categoryId, name: name.trim(), code }
+    });
+  } catch (error) {
+    console.error('createDesignation Error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to create designation: ' + error.message });
+  }
+};
+
+// PUT /api/v1/admin/designations/:id - Update Designation
+const updateDesignation = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, code, description, sortOrder, isActive } = req.body;
+    await query(
+      `UPDATE job_designations SET
+        name = COALESCE(?, name),
+        code = COALESCE(?, code),
+        description = COALESCE(?, description),
+        sort_order = COALESCE(?, sort_order),
+        is_active = COALESCE(?, is_active)
+      WHERE id = ?`,
+      [
+        name ? name.trim() : null,
+        code !== undefined ? code : null,
+        description !== undefined ? description : null,
+        sortOrder !== undefined ? sortOrder : null,
+        isActive !== undefined ? (isActive ? 1 : 0) : null,
+        id
+      ]
+    );
+    return res.status(200).json({ success: true, message: 'Designation updated successfully.' });
+  } catch (error) {
+    console.error('updateDesignation Error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to update designation: ' + error.message });
+  }
+};
+
+// DELETE /api/v1/admin/designations/:id
+const deleteDesignation = async (req, res) => {
+  try {
+    const { id } = req.params;
+    await query('DELETE FROM job_designations WHERE id = ?', [id]);
+    return res.status(200).json({ success: true, message: 'Designation and associated subjects deleted.' });
+  } catch (error) {
+    console.error('deleteDesignation Error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to delete designation: ' + error.message });
+  }
+};
+
+// POST /api/v1/admin/subjects - Add Subject(s) under Designation
+const createSubject = async (req, res) => {
+  try {
+    const { designationId, name, code, sortOrder = 0 } = req.body;
+    if (!designationId || !name || !name.trim()) {
+      return res.status(400).json({ success: false, message: 'Designation ID and Subject Name are required.' });
+    }
+
+    // Support comma-separated batch adding (e.g. "Science, Maths, English")
+    const names = name.split(',').map((n) => n.trim()).filter(Boolean);
+    const created = [];
+
+    for (let i = 0; i < names.length; i++) {
+      const n = names[i];
+      const result = await query(
+        'INSERT INTO job_subjects (designation_id, name, code, sort_order) VALUES (?, ?, ?, ?)',
+        [designationId, n, code && names.length === 1 ? code.trim() : null, sortOrder + i]
+      );
+      created.push({ id: result.insertId, name: n });
+    }
+
+    return res.status(201).json({
+      success: true,
+      message: `${created.length} Subject(s) added successfully.`,
+      data: created
+    });
+  } catch (error) {
+    console.error('createSubject Error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to add subject: ' + error.message });
+  }
+};
+
+// PUT /api/v1/admin/subjects/:id - Update Subject
+const updateSubject = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, code, sortOrder, isActive } = req.body;
+    await query(
+      `UPDATE job_subjects SET
+        name = COALESCE(?, name),
+        code = COALESCE(?, code),
+        sort_order = COALESCE(?, sort_order),
+        is_active = COALESCE(?, is_active)
+      WHERE id = ?`,
+      [
+        name ? name.trim() : null,
+        code !== undefined ? code : null,
+        sortOrder !== undefined ? sortOrder : null,
+        isActive !== undefined ? (isActive ? 1 : 0) : null,
+        id
+      ]
+    );
+    return res.status(200).json({ success: true, message: 'Subject updated successfully.' });
+  } catch (error) {
+    console.error('updateSubject Error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to update subject: ' + error.message });
+  }
+};
+
+// DELETE /api/v1/admin/subjects/:id
+const deleteSubject = async (req, res) => {
+  try {
+    const { id } = req.params;
+    await query('DELETE FROM job_subjects WHERE id = ?', [id]);
+    return res.status(200).json({ success: true, message: 'Subject deleted successfully.' });
+  } catch (error) {
+    console.error('deleteSubject Error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to delete subject: ' + error.message });
+  }
+};
+
 module.exports = {
   getDashboardStats,
   getSchools,
@@ -749,5 +979,15 @@ module.exports = {
   impersonateUser,
   toggleUserStatus,
   getAllJobs,
-  deleteJob
+  deleteJob,
+  getAdminTaxonomy,
+  createCategory,
+  updateCategory,
+  deleteCategory,
+  createDesignation,
+  updateDesignation,
+  deleteDesignation,
+  createSubject,
+  updateSubject,
+  deleteSubject
 };

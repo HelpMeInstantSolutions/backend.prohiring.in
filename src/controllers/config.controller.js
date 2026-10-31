@@ -149,10 +149,56 @@ const testSms = async (req, res) => {
   }
 };
 
+// GET /api/v1/config/taxonomy (Public)
+// Returns active posts / categories -> designations -> subjects tree for school post-job, job search, and candidate onboarding
+const getPublicTaxonomy = async (req, res) => {
+  try {
+    const categories = await query(
+      'SELECT id, name, slug, description, sort_order FROM job_categories WHERE is_active = 1 ORDER BY sort_order ASC, name ASC'
+    );
+    const designations = await query(
+      'SELECT id, category_id, name, code, description, sort_order FROM job_designations WHERE is_active = 1 ORDER BY sort_order ASC, name ASC'
+    );
+    const subjects = await query(
+      'SELECT id, designation_id, name, code, sort_order FROM job_subjects WHERE is_active = 1 ORDER BY sort_order ASC, name ASC'
+    );
+
+    const subjectsByDesig = {};
+    subjects.forEach((s) => {
+      if (!subjectsByDesig[s.designation_id]) subjectsByDesig[s.designation_id] = [];
+      subjectsByDesig[s.designation_id].push(s);
+    });
+
+    const desigsByCat = {};
+    designations.forEach((d) => {
+      d.subjects = subjectsByDesig[d.id] || [];
+      if (!desigsByCat[d.category_id]) desigsByCat[d.category_id] = [];
+      desigsByCat[d.category_id].push(d);
+    });
+
+    const tree = categories.map((c) => ({
+      ...c,
+      designations: desigsByCat[c.id] || []
+    }));
+
+    return res.status(200).json({
+      success: true,
+      data: tree
+    });
+  } catch (error) {
+    console.error('getPublicTaxonomy Error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to retrieve job taxonomy: ' + error.message
+    });
+  }
+};
+
 module.exports = {
   getPublicSettings,
   getAllSettings,
   updateSettings,
   testMail,
-  testSms
+  testSms,
+  getPublicTaxonomy
 };

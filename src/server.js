@@ -229,7 +229,219 @@ async function autoMigrateColumns() {
       }
     }
 
-    console.log('[Auto-Migrate] Teacher profile columns and suggestions verified successfully.');
+    // Ensure Post / Categories, Designations, and Subjects tables exist
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS \`job_categories\` (
+        \`id\` INT AUTO_INCREMENT PRIMARY KEY,
+        \`name\` VARCHAR(100) NOT NULL,
+        \`slug\` VARCHAR(100) NOT NULL UNIQUE,
+        \`description\` VARCHAR(255) DEFAULT NULL,
+        \`sort_order\` INT DEFAULT 0,
+        \`is_active\` BOOLEAN DEFAULT 1,
+        \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS \`job_designations\` (
+        \`id\` INT AUTO_INCREMENT PRIMARY KEY,
+        \`category_id\` INT NOT NULL,
+        \`name\` VARCHAR(150) NOT NULL,
+        \`code\` VARCHAR(50) DEFAULT NULL,
+        \`description\` VARCHAR(255) DEFAULT NULL,
+        \`sort_order\` INT DEFAULT 0,
+        \`is_active\` BOOLEAN DEFAULT 1,
+        \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX \`idx_category_id\` (\`category_id\`),
+        FOREIGN KEY (\`category_id\`) REFERENCES \`job_categories\` (\`id\`) ON DELETE CASCADE
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS \`job_subjects\` (
+        \`id\` INT AUTO_INCREMENT PRIMARY KEY,
+        \`designation_id\` INT NOT NULL,
+        \`name\` VARCHAR(150) NOT NULL,
+        \`code\` VARCHAR(50) DEFAULT NULL,
+        \`sort_order\` INT DEFAULT 0,
+        \`is_active\` BOOLEAN DEFAULT 1,
+        \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX \`idx_designation_id\` (\`designation_id\`),
+        FOREIGN KEY (\`designation_id\`) REFERENCES \`job_designations\` (\`id\`) ON DELETE CASCADE
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+
+    // Add optional post_type column to jobs if not present
+    const [jobsColExisting] = await pool.query(
+      `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS 
+       WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'jobs' AND COLUMN_NAME = 'post_type'`
+    );
+    if (jobsColExisting.length === 0) {
+      await pool.query("ALTER TABLE `jobs` ADD COLUMN `post_type` VARCHAR(100) DEFAULT 'Teaching Staff'");
+    }
+
+    // Seed initial Post -> Designation -> Subject taxonomy if empty
+    const [catCntRows] = await pool.query('SELECT COUNT(*) as cnt FROM `job_categories`');
+    if (catCntRows[0]?.cnt === 0) {
+      console.log('[Auto-Migrate] Seeding initial posts, designations, and subjects taxonomy...');
+
+      const seedTaxonomy = [
+        {
+          name: 'Teaching Staff',
+          slug: 'teaching-staff',
+          description: 'Classroom educators, subject specialists, and academic faculty',
+          sortOrder: 1,
+          designations: [
+            {
+              name: 'TGT (Trained Graduate Teacher - Classes VI-X)',
+              code: 'TGT',
+              description: 'Middle and secondary school teaching faculty',
+              subjects: ['Science (Physics/Chemistry/Bio)', 'Mathematics', 'English', 'Hindi', 'Social Science (SST)', 'Sanskrit', 'Computer Science / IT', 'Art & Craft']
+            },
+            {
+              name: 'PGT (Post Graduate Teacher - Classes XI-XII)',
+              code: 'PGT',
+              description: 'Senior secondary specialized subject educators',
+              subjects: ['Mathematics', 'Physics', 'Chemistry', 'Biology', 'English Core', 'Hindi Core', 'Computer Science / IP', 'Accountancy', 'Business Studies', 'Economics', 'History', 'Political Science', 'Geography', 'Physical Education', 'Psychology', 'Sociology']
+            },
+            {
+              name: 'PRT (Primary Teacher - Classes I-V)',
+              code: 'PRT',
+              description: 'Foundational primary stage teachers',
+              subjects: ['All Subjects (General PRT)', 'English', 'Mathematics', 'EVS / Environmental Science', 'Hindi', 'Social Studies']
+            },
+            {
+              name: 'NTT (Nursery / Kindergarten / Pre-Primary)',
+              code: 'NTT',
+              description: 'Early childhood development and playgroup educators',
+              subjects: ['Early Childhood Education (ECCE)', 'Phonics & Rhymes', 'Activity & Creative Play']
+            },
+            {
+              name: 'Principal / Vice Principal',
+              code: 'LEADERSHIP',
+              description: 'Academic leaders and institutional directors',
+              subjects: ['Academic Administration', 'School Leadership & Operations']
+            },
+            {
+              name: 'Special Educator',
+              code: 'SPECIAL_ED',
+              description: 'Inclusive education and learning support specialists',
+              subjects: ['Special Education', 'Learning Disability Support', 'Speech & Hearing Support']
+            }
+          ]
+        },
+        {
+          name: 'Non-Teaching Staff',
+          slug: 'non-teaching-staff',
+          description: 'Administrative, clerical, laboratory, and operational school personnel',
+          sortOrder: 2,
+          designations: [
+            {
+              name: 'Clerk / Office Assistant',
+              code: 'CLERK',
+              description: 'General office management and student record keeping',
+              subjects: ['General Administration', 'Student Admissions & Records', 'Front Office Operations', 'Data Entry & Documentation']
+            },
+            {
+              name: 'Accountant / Cashier',
+              code: 'ACCOUNTANT',
+              description: 'School financial management and fee processing',
+              subjects: ['School Accounts & Tally ERP', 'Student Fee Collection', 'Payroll & Staff Salaries', 'Taxation & Audits']
+            },
+            {
+              name: 'Librarian / Assistant Librarian',
+              code: 'LIBRARIAN',
+              description: 'Library cataloging, book issuance, and resource curation',
+              subjects: ['Library Science & Cataloging', 'Digital Library Operations', 'Resource & Book Management']
+            },
+            {
+              name: 'Lab Assistant / Lab Technician',
+              code: 'LAB_ASST',
+              description: 'Hands-on laboratory setup and science equipment management',
+              subjects: ['Physics Laboratory', 'Chemistry Laboratory', 'Biology Laboratory', 'Computer Hardware & Networking Lab']
+            },
+            {
+              name: 'Receptionist / Front Desk Executive',
+              code: 'RECEPTIONIST',
+              description: 'School reception, visitor management, and telephone inquiries',
+              subjects: ['Front Desk & Reception', 'Parent Communication & Inquiries', 'Tele-calling & Admission Helpdesk']
+            },
+            {
+              name: 'Counselor / Student Wellness',
+              code: 'COUNSELOR',
+              description: 'Mental health, behavioral wellness, and career guidance',
+              subjects: ['Student Career Guidance', 'Child Psychology & Behavioral Counseling', 'Parent-Student Mediation']
+            },
+            {
+              name: 'Peon / Multitasking Staff (MTS)',
+              code: 'PEON',
+              description: 'Classroom assistance and campus support operations',
+              subjects: ['Office Support & Dispatch', 'Campus Maintenance & Utility']
+            },
+            {
+              name: 'Transport Staff / Bus Driver',
+              code: 'TRANSPORT',
+              description: 'Safe student commute and vehicle operations',
+              subjects: ['Heavy Bus Driving (RTO Licensed)', 'School Van Operations', 'Transport Supervisor']
+            }
+          ]
+        },
+        {
+          name: 'Sports, Arts & Activity Staff',
+          slug: 'sports-arts',
+          description: 'Physical trainers, performing arts coaches, and creative instructors',
+          sortOrder: 3,
+          designations: [
+            {
+              name: 'Physical Education Teacher (PET) / Sports Coach',
+              code: 'PET',
+              description: 'Sports coaching, athletics, and physical fitness',
+              subjects: ['Cricket Coaching', 'Football Coaching', 'Basketball Coaching', 'Badminton & Tennis', 'Athletics & Track', 'Yoga & Meditation', 'Martial Arts / Taekwondo']
+            },
+            {
+              name: 'Music & Dance Teacher',
+              code: 'MUSIC_DANCE',
+              description: 'Vocal, instrumental music, and choreographic arts',
+              subjects: ['Classical Vocal Music', 'Western Music & Choir', 'Keyboard & Piano', 'Guitar & Instrumental', 'Classical Indian Dance (Kathak/Bharatnatyam)', 'Western Contemporary Dance']
+            },
+            {
+              name: 'Art & Craft / Fine Arts Teacher',
+              code: 'ART_CRAFT',
+              description: 'Visual arts, painting, and creative crafts',
+              subjects: ['Drawing & Painting', 'Clay Modeling & Pottery', 'Origami & Crafting', 'Commercial & Digital Art']
+            }
+          ]
+        }
+      ];
+
+      for (const cat of seedTaxonomy) {
+        const [catRes] = await pool.query(
+          'INSERT INTO job_categories (name, slug, description, sort_order) VALUES (?, ?, ?, ?)',
+          [cat.name, cat.slug, cat.description, cat.sortOrder]
+        );
+        const catId = catRes.insertId;
+
+        for (let dIdx = 0; dIdx < cat.designations.length; dIdx++) {
+          const desig = cat.designations[dIdx];
+          const [desigRes] = await pool.query(
+            'INSERT INTO job_designations (category_id, name, code, description, sort_order) VALUES (?, ?, ?, ?, ?)',
+            [catId, desig.name, desig.code, desig.description, dIdx + 1]
+          );
+          const desigId = desigRes.insertId;
+
+          for (let sIdx = 0; sIdx < desig.subjects.length; sIdx++) {
+            const subjName = desig.subjects[sIdx];
+            await pool.query(
+              'INSERT INTO job_subjects (designation_id, name, sort_order) VALUES (?, ?, ?)',
+              [desigId, subjName, sIdx + 1]
+            );
+          }
+        }
+      }
+      console.log('[Auto-Migrate] Initial taxonomy seeded successfully.');
+    }
+
+    console.log('[Auto-Migrate] Teacher profile columns, suggestions, and posts/designations taxonomy verified.');
   } catch (err) {
     console.warn('[Auto-Migrate] Column check warning:', err.message);
   }

@@ -33,6 +33,20 @@ router.put('/users/:id/status', adminController.toggleUserStatus);
 router.get('/jobs', adminController.getAllJobs);
 router.delete('/jobs/:id', adminController.deleteJob);
 
+// Posts, Designations & Subjects Taxonomy Management
+router.get('/taxonomy', adminController.getAdminTaxonomy);
+router.post('/categories', adminController.createCategory);
+router.put('/categories/:id', adminController.updateCategory);
+router.delete('/categories/:id', adminController.deleteCategory);
+
+router.post('/designations', adminController.createDesignation);
+router.put('/designations/:id', adminController.updateDesignation);
+router.delete('/designations/:id', adminController.deleteDesignation);
+
+router.post('/subjects', adminController.createSubject);
+router.put('/subjects/:id', adminController.updateSubject);
+router.delete('/subjects/:id', adminController.deleteSubject);
+
 // Dynamic System Settings (Change App Name, Branding, Contact Info)
 router.get('/settings', configController.getAllSettings);
 router.put('/settings', configController.updateSettings);
