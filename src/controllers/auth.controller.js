@@ -168,11 +168,26 @@ const registerTeacher = async (req, res) => {
 
     const userId = userResult.insertId;
 
+function formatIndianPhone(phone) {
+  if (!phone) return null;
+  const cleaned = String(phone).replace(/[^\d]/g, '');
+  if (cleaned.length === 10) {
+    return `+91 ${cleaned}`;
+  }
+  if (cleaned.length === 12 && cleaned.startsWith('91')) {
+    return `+91 ${cleaned.slice(2)}`;
+  }
+  if (String(phone).startsWith('+')) return String(phone).trim();
+  return cleaned ? `+${cleaned}` : null;
+}
+
+    const formattedTeacherPhone = formatIndianPhone(phone);
+
     await connection.execute(
       `INSERT INTO teacher_profiles 
        (user_id, full_name, phone, highest_qualification, primary_subject)
        VALUES (?, ?, ?, ?, ?)`,
-      [userId, fullName.trim(), phone || null, highestQualification || null, primarySubject || null]
+      [userId, fullName.trim(), formattedTeacherPhone, highestQualification || null, primarySubject || null]
     );
 
     await connection.commit();
@@ -208,7 +223,7 @@ const registerTeacher = async (req, res) => {
 const registerSchool = async (req, res) => {
   let connection;
   try {
-    const { email, password, schoolName, contactPerson, phone, city, state, board } = req.body;
+    const { email, password, confirmPassword, schoolName, contactPerson, phone, city, state, board } = req.body;
 
     if (!email || !password || !schoolName) {
       return res.status(400).json({
@@ -216,6 +231,15 @@ const registerSchool = async (req, res) => {
         message: 'Email, password, and school name are required.'
       });
     }
+
+    if (confirmPassword && password !== confirmPassword) {
+      return res.status(400).json({
+        success: false,
+        message: 'Set Password and Confirm Password do not match.'
+      });
+    }
+
+    const formattedSchoolPhone = formatIndianPhone(phone);
 
     const existing = await query('SELECT id FROM users WHERE email = ?', [email.toLowerCase().trim()]);
     if (existing.length > 0) {
@@ -243,7 +267,7 @@ const registerSchool = async (req, res) => {
         userId,
         schoolName.trim(),
         contactPerson || null,
-        phone || null,
+        formattedSchoolPhone,
         city || null,
         state || null,
         board || 'CBSE',
