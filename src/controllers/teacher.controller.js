@@ -76,14 +76,22 @@ const updateProfile = async (req, res) => {
     } = req.body;
 
     const serialize = (val) => {
-      if (val === undefined) return null;
-      if (val === null) return null;
+      if (val === undefined || val === null) return null;
       if (typeof val === 'string') return val;
       return JSON.stringify(val);
     };
 
     // Check completion criteria
     const isCompleted = !!(fullName && phone && primarySubject && currentCity && qualificationsData);
+
+    const updateParams = [
+      fullName, phone, gender, dob, address, pincode, languages, headline,
+      highestQualification, specialization, experienceYears, primarySubject, secondarySubjects,
+      currentCity, currentState, expectedSalaryMin, expectedSalaryMax, bio,
+      serialize(familyDetails), serialize(qualificationsData), serialize(previousJobsData),
+      serialize(currentJobData), serialize(tetDetails), profileStep || 1,
+      isCompleted ? 1 : 0, userId
+    ].map((v) => (v === undefined ? null : v));
 
     await query(
       `UPDATE teacher_profiles 
@@ -113,14 +121,7 @@ const updateProfile = async (req, res) => {
            profile_step = COALESCE(?, profile_step),
            is_profile_completed = ?
        WHERE user_id = ?`,
-      [
-        fullName, phone, gender, dob, address, pincode, languages, headline,
-        highestQualification, specialization, experienceYears, primarySubject, secondarySubjects,
-        currentCity, currentState, expectedSalaryMin, expectedSalaryMax, bio,
-        serialize(familyDetails), serialize(qualificationsData), serialize(previousJobsData),
-        serialize(currentJobData), serialize(tetDetails), profileStep || 1,
-        isCompleted ? 1 : 0, userId
-      ]
+      updateParams
     );
 
     const updated = await query('SELECT * FROM teacher_profiles WHERE user_id = ?', [userId]);
