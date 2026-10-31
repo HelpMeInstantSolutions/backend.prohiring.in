@@ -126,6 +126,36 @@ const updateProfile = async (req, res) => {
 
     const updated = await query('SELECT * FROM teacher_profiles WHERE user_id = ?', [userId]);
 
+    // Save user-entered qualifications into qualification_suggestions for community autocomplete
+    if (Array.isArray(qualificationsData)) {
+      for (const item of qualificationsData) {
+        if (item.degree && item.degree.trim()) {
+          await query(
+            `INSERT INTO qualification_suggestions (type, name, use_count) 
+             VALUES ('degree', ?, 1) 
+             ON DUPLICATE KEY UPDATE use_count = use_count + 1`,
+            [item.degree.trim()]
+          ).catch(() => {});
+        }
+        if (item.institute && item.institute.trim()) {
+          await query(
+            `INSERT INTO qualification_suggestions (type, name, use_count) 
+             VALUES ('institute', ?, 1) 
+             ON DUPLICATE KEY UPDATE use_count = use_count + 1`,
+            [item.institute.trim()]
+          ).catch(() => {});
+        }
+        if (item.board && item.board.trim()) {
+          await query(
+            `INSERT INTO qualification_suggestions (type, name, use_count) 
+             VALUES ('university', ?, 1) 
+             ON DUPLICATE KEY UPDATE use_count = use_count + 1`,
+            [item.board.trim()]
+          ).catch(() => {});
+        }
+      }
+    }
+
     return res.status(200).json({
       success: true,
       message: 'Profile updated successfully.',
@@ -437,6 +467,50 @@ const getTeacherDashboard = async (req, res) => {
   }
 };
 
+// GET /api/v1/teacher/qualification-suggestions?type=university&q=Maha
+const getQualificationSuggestions = async (req, res) => {
+  try {
+    const { type = 'university', q = '' } = req.query;
+    const cleanQ = (q || '').trim();
+
+    if (!cleanQ) {
+      const rows = await query(
+        `SELECT name FROM qualification_suggestions 
+         WHERE type = ? 
+         ORDER BY use_count DESC, name ASC 
+         LIMIT 15`,
+        [type]
+      );
+      return res.status(200).json({
+        success: true,
+        data: rows.map((r) => r.name)
+      });
+    }
+
+    const rows = await query(
+      `SELECT name FROM qualification_suggestions 
+       WHERE type = ? AND name LIKE ? 
+       ORDER BY 
+         CASE WHEN name LIKE ? THEN 1 ELSE 2 END,
+         use_count DESC, 
+         name ASC 
+       LIMIT 15`,
+      [type, `%${cleanQ}%`, `${cleanQ}%`]
+    );
+
+    return res.status(200).json({
+      success: true,
+      data: rows.map((r) => r.name)
+    });
+  } catch (error) {
+    console.error('getQualificationSuggestions Error:', error);
+    return res.status(200).json({
+      success: true,
+      data: []
+    });
+  }
+};
+
 module.exports = {
   getProfile,
   updateProfile,
@@ -446,5 +520,6 @@ module.exports = {
   getMyApplications,
   toggleSaveJob,
   getSavedJobs,
-  getTeacherDashboard
+  getTeacherDashboard,
+  getQualificationSuggestions
 };

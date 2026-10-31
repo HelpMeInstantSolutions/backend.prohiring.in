@@ -139,7 +139,97 @@ async function autoMigrateColumns() {
         await pool.query(`ALTER TABLE \`teacher_profiles\` ADD COLUMN \`${colName}\` ${colDef};`);
       }
     }
-    console.log('[Auto-Migrate] Teacher profile columns verified successfully.');
+
+    // Ensure qualification_suggestions table exists for dynamic autocomplete
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS \`qualification_suggestions\` (
+        \`id\` INT AUTO_INCREMENT PRIMARY KEY,
+        \`type\` ENUM('university', 'institute', 'degree') NOT NULL,
+        \`name\` VARCHAR(255) NOT NULL,
+        \`use_count\` INT DEFAULT 1,
+        \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY \`uniq_type_name\` (\`type\`, \`name\`),
+        INDEX \`idx_type_name\` (\`type\`, \`name\`(50))
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+
+    // Seed standard Indian universities and degrees if table is empty
+    const [cntRows] = await pool.query('SELECT COUNT(*) as cnt FROM `qualification_suggestions`');
+    if (cntRows[0]?.cnt === 0) {
+      console.log('[Auto-Migrate] Seeding initial universities and degrees for autocomplete...');
+      const defaultUniversities = [
+        'CBSE (Central Board of Secondary Education)',
+        'ICSE / ISC (CISCE Board)',
+        'State Board (RBSE Rajasthan)',
+        'State Board (UP Board)',
+        'State Board (BSEH Haryana)',
+        'State Board (BSEB Bihar)',
+        'State Board (Maharashtra State Board)',
+        'State Board (MP Board)',
+        'State Board (PSEB Punjab)',
+        'State Board (UK Board Uttarakhand)',
+        'NIOS (National Institute of Open Schooling)',
+        'Cambridge International (CIE / IGCSE)',
+        'International Baccalaureate (IB)',
+        'University of Delhi (DU)',
+        'Banaras Hindu University (BHU)',
+        'Jamia Millia Islamia (JMI)',
+        'Aligarh Muslim University (AMU)',
+        'Indira Gandhi National Open University (IGNOU)',
+        'Maharshi Dayanand University (MDU Rohtak)',
+        'Kurukshetra University (KUK)',
+        'Chaudhary Charan Singh University (CCSU Meerut)',
+        'University of Rajasthan (Jaipur)',
+        'Panjab University (PU Chandigarh)',
+        'University of Mumbai',
+        'Savitribai Phule Pune University (SPPU)',
+        'University of Calcutta',
+        'University of Lucknow',
+        'Dr. A.P.J. Abdul Kalam Technical University (AKTU)',
+        'Guru Gobind Singh Indraprastha University (GGSIPU Delhi)',
+        'Bangalore University',
+        'Osmania University (Hyderabad)',
+        'University of Madras (Chennai)',
+        'Patna University',
+        'Jai Narain Vyas University (JNVU Jodhpur)',
+        'Mohanlal Sukhadia University (MLSU Udaipur)',
+        'Maharaja Ganga Singh University (MGSU Bikaner)',
+        'University of Kota',
+        'Pandit Deendayal Upadhyaya Shekhawati University (Sikar)',
+        'Barkatullah University (Bhopal)',
+        'Jiwaji University (Gwalior)',
+        'Devi Ahilya Vishwavidyalaya (DAVV Indore)',
+        'Chaudhary Devi Lal University (CDLU Sirsa)',
+        'Deen Dayal Upadhyaya Gorakhpur University',
+        'Chhatrapati Shahu Ji Maharaj University (CSJMU Kanpur)',
+        'Bundelkhand University (Jhansi)',
+        'Dr. Bhimrao Ambedkar University (DBRAU Agra)',
+        'National Council for Teacher Education (NCTE Recognized)'
+      ];
+
+      const defaultDegrees = [
+        'B.Ed (Bachelor of Education)',
+        'D.El.Ed / BTC (Diploma in Elementary Education)',
+        'B.El.Ed (Bachelor of Elementary Education)',
+        'M.Ed (Master of Education)',
+        'Graduation (B.Sc / B.A / B.Com / B.Tech)',
+        'Post Graduation (M.Sc / M.A / M.Com / M.Tech)',
+        'Class 12th (Senior Secondary)',
+        'Class 10th (Secondary)',
+        'Ph.D / Doctorate',
+        'NTT (Nursery Teacher Training)',
+        'Diploma / Certificate in Education'
+      ];
+
+      for (const u of defaultUniversities) {
+        await pool.query('INSERT IGNORE INTO qualification_suggestions (type, name, use_count) VALUES (?, ?, ?)', ['university', u, 10]);
+      }
+      for (const d of defaultDegrees) {
+        await pool.query('INSERT IGNORE INTO qualification_suggestions (type, name, use_count) VALUES (?, ?, ?)', ['degree', d, 10]);
+      }
+    }
+
+    console.log('[Auto-Migrate] Teacher profile columns and suggestions verified successfully.');
   } catch (err) {
     console.warn('[Auto-Migrate] Column check warning:', err.message);
   }

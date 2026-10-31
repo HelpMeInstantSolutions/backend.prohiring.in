@@ -17,5 +17,6 @@ router.get('/applications', teacherController.getMyApplications);
 router.post('/save-job/:jobId', teacherController.toggleSaveJob);
 router.get('/saved-jobs', teacherController.getSavedJobs);
 router.get('/dashboard', teacherController.getTeacherDashboard);
+router.get('/qualification-suggestions', teacherController.getQualificationSuggestions);
 
 module.exports = router;
