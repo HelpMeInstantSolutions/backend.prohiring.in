@@ -73,7 +73,8 @@ async function runMigration() {
       ['student_count', 'VARCHAR(50) DEFAULT NULL'],
       ['faculty_count', 'VARCHAR(50) DEFAULT NULL'],
       ['social_links', 'TEXT DEFAULT NULL'],
-      ['campus_photos', 'TEXT DEFAULT NULL']
+      ['campus_photos', 'TEXT DEFAULT NULL'],
+      ['slug', 'VARCHAR(255) DEFAULT NULL']
     ];
 
     for (const [colName, colDef] of schoolColumnsToEnsure) {
@@ -90,6 +91,52 @@ async function runMigration() {
       } catch (err) {
         console.warn(`Could not check or add column ${colName} to school_profiles:`, err.message);
       }
+    }
+
+    // Backfill school slugs if empty
+    try {
+      const [schoolsWithoutSlug] = await connection.query(
+        "SELECT id, school_name FROM school_profiles WHERE slug IS NULL OR slug = ''"
+      );
+      for (const s of schoolsWithoutSlug) {
+        const baseSlug = (s.school_name || 'school')
+          .toLowerCase()
+          .trim()
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/^-+|-+$/g, '') || `school-${s.id}`;
+        let finalSlug = baseSlug;
+        const [duplicate] = await connection.query(
+          "SELECT id FROM school_profiles WHERE slug = ? AND id != ?",
+          [finalSlug, s.id]
+        );
+        if (duplicate.length > 0) {
+          finalSlug = `${baseSlug}-${s.id}`;
+        }
+        await connection.query("UPDATE school_profiles SET slug = ? WHERE id = ?", [finalSlug, s.id]);
+        console.log(`Backfilled slug '${finalSlug}' for school ID ${s.id} (${s.school_name})`);
+      }
+    } catch (slugErr) {
+      console.warn('Notice during school slug backfill:', slugErr.message);
+    }
+
+    // Ensure WhatsApp platform settings exist
+    try {
+      const whatsappDefaults = [
+        ['whatsapp_enabled', 'true', 'General', 1],
+        ['whatsapp_number', '+919876543210', 'General', 1],
+        ['whatsapp_message', 'Hello ProHiring Team, I need assistance regarding teaching jobs / school recruitment.', 'General', 1],
+        ['whatsapp_position', 'bottom-right', 'General', 1]
+      ];
+      for (const [key, val, cat, isPub] of whatsappDefaults) {
+        await connection.query(
+          `INSERT INTO system_settings (setting_key, setting_value, category, is_public) 
+           VALUES (?, ?, ?, ?) 
+           ON DUPLICATE KEY UPDATE category = VALUES(category), is_public = VALUES(is_public)`,
+          [key, val, cat, isPub]
+        );
+      }
+    } catch (wsErr) {
+      console.warn('Notice during whatsapp settings initialization:', wsErr.message);
     }
 
 

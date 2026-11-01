@@ -18,8 +18,9 @@ router.put('/schools/:id', adminController.updateSchool);
 router.delete('/schools/:id', adminController.deleteSchool);
 router.put('/schools/:id/verification', adminController.updateSchoolVerification);
 
-// Teachers management (List, Edit, Delete)
+// Teachers management (List, Add, Edit, Delete)
 router.get('/teachers', adminController.getTeachers);
+router.post('/teachers', adminController.createTeacher);
 router.put('/teachers/:id', adminController.updateTeacher);
 router.delete('/teachers/:id', adminController.deleteTeacher);
 

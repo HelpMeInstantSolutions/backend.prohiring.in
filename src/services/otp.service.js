@@ -241,10 +241,66 @@ async function sendTestSms(toPhone, customConfig = {}) {
   return await dispatchSms(toPhone, testOtp);
 }
 
+/**
+ * Dispatch Account Credentials Email to newly created School or Teacher
+ */
+async function sendAccountCredentialsEmail({ toEmail, name, role, phone, password, loginUrl = 'https://prohiring.in/auth/login' }) {
+  const roleTitle = role === 'school' ? 'School Recruiter' : 'Teacher / Educator';
+  const appName = await getConfigValue('app_name', 'ProHiring');
+  const subject = `Your ${roleTitle} Account Credentials - ${appName}`;
+  const html = `
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 580px; margin: 0 auto; padding: 28px; border: 1px solid #E2E8F0; border-radius: 16px; background-color: #FFFFFF;">
+      <div style="text-align: center; margin-bottom: 24px; border-bottom: 1px solid #F1F5F9; padding-bottom: 20px;">
+        <h2 style="color: #4F46E5; margin: 0; font-size: 24px; font-weight: 800;">${appName}</h2>
+        <p style="color: #64748B; font-size: 13px; margin: 4px 0 0 0;">School & Educator Recruitment Network</p>
+      </div>
+
+      <p style="font-size: 15px; color: #0F172A; margin: 0 0 16px 0;">
+        Hello <strong>${name}</strong>,
+      </p>
+      <p style="font-size: 14px; color: #475569; line-height: 1.6; margin: 0 0 20px 0;">
+        An administrator has created your <strong>${roleTitle}</strong> account on ${appName}. You can now log in to access your profile and opportunities.
+      </p>
+
+      <div style="background-color: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 12px; padding: 20px; margin-bottom: 24px;">
+        <h4 style="margin: 0 0 12px 0; font-size: 13px; color: #334155; text-transform: uppercase; letter-spacing: 0.5px;">Your Login Credentials</h4>
+        <table style="width: 100%; font-size: 14px; color: #1E293B;">
+          <tr>
+            <td style="padding: 6px 0; color: #64748B; width: 140px;">Official Email:</td>
+            <td style="padding: 6px 0; font-weight: 600;">${toEmail}</td>
+          </tr>
+          ${phone ? `<tr>
+            <td style="padding: 6px 0; color: #64748B;">Registered Phone:</td>
+            <td style="padding: 6px 0; font-weight: 600;">${phone}</td>
+          </tr>` : ''}
+          <tr>
+            <td style="padding: 6px 0; color: #64748B;">Login Password:</td>
+            <td style="padding: 6px 0; font-weight: 700; color: #4F46E5; font-family: monospace; font-size: 16px;">${password}</td>
+          </tr>
+        </table>
+      </div>
+
+      <div style="text-align: center; margin-bottom: 24px;">
+        <a href="${loginUrl}" style="display: inline-block; background-color: #4F46E5; color: #FFFFFF; font-weight: 700; font-size: 14px; text-decoration: none; padding: 12px 28px; border-radius: 10px; box-shadow: 0 4px 6px -1px rgba(79, 70, 229, 0.2);">
+          Log In to Your Account
+        </a>
+      </div>
+
+      <p style="font-size: 12px; color: #94A3B8; text-align: center; margin: 0;">
+        You can update your password after logging in from your profile settings.<br/>
+        If you did not request this, please contact support.
+      </p>
+    </div>
+  `;
+  return await dispatchEmail(toEmail, null, subject, html);
+}
+
 module.exports = {
   sanitizePhone,
   dispatchSms,
   dispatchEmail,
   sendTestMail,
-  sendTestSms
+  sendTestSms,
+  sendAccountCredentialsEmail
 };
+

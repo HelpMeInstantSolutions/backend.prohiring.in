@@ -27,6 +27,12 @@ const getPublicSettings = async (req, res) => {
         androidMinVersion: settings.android_min_version || '1.0.0',
         faviconUrl: settings.favicon_url || '/favicon.ico',
         logoUrl: settings.logo_url || '',
+        whatsapp: {
+          enabled: settings.whatsapp_enabled === 'true',
+          number: settings.whatsapp_number || settings.support_phone || '+919876543210',
+          message: settings.whatsapp_message || 'Hello ProHiring Team, I need assistance regarding teaching jobs / school recruitment.',
+          position: settings.whatsapp_position || 'bottom-right'
+        },
         all: settings
       }
     });

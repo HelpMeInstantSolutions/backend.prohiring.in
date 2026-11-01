@@ -113,7 +113,7 @@ const getPublicJobs = async (req, res) => {
         j.id, j.title, j.designation, j.subject, j.qualification_required, 
         j.experience_required, j.salary_min, j.salary_max, j.salary_negotiable, 
         j.job_type, j.openings, j.city, j.state, j.deadline, j.created_at,
-        s.id as school_id, s.school_name, s.logo_url as school_logo, s.board, s.is_verified,
+        s.id as school_id, s.school_name, s.logo_url as school_logo, s.board, s.is_verified, s.slug as school_slug,
         s.latitude as school_latitude, s.longitude as school_longitude, s.address as school_address,
         ${hasCoords ? `${haversineFormula} AS distance_km` : 'NULL AS distance_km'}
       FROM jobs j
@@ -152,7 +152,7 @@ const getFeaturedJobs = async (req, res) => {
         j.id, j.title, j.designation, j.subject, j.qualification_required, 
         j.experience_required, j.salary_min, j.salary_max, j.salary_negotiable, 
         j.job_type, j.city, j.state, j.created_at,
-        s.school_name, s.logo_url as school_logo, s.board,
+        s.school_name, s.logo_url as school_logo, s.board, s.slug as school_slug,
         s.latitude as school_latitude, s.longitude as school_longitude
       FROM jobs j
       JOIN school_profiles s ON j.school_id = s.id
@@ -185,7 +185,7 @@ const getJobById = async (req, res) => {
         j.*,
         s.school_name, s.logo_url as school_logo, s.banner_url as school_banner,
         s.board, s.website as school_website, s.about as school_about, 
-        s.city as school_city, s.state as school_state, s.is_verified,
+        s.city as school_city, s.state as school_state, s.is_verified, s.slug as school_slug,
         s.latitude as school_latitude, s.longitude as school_longitude,
         s.address as school_address, s.maps_url as school_maps_url
       FROM jobs j

@@ -2,6 +2,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { query } = require('../config/database');
 const webdavService = require('../services/webdav.service');
+const { sendAccountCredentialsEmail } = require('../services/otp.service');
 
 const generateToken = (user) => {
   const secret = process.env.JWT_SECRET || 'prohiring_super_secure_jwt_secret_key_2026_change_in_production';
@@ -404,10 +405,21 @@ const createSchool = async (req, res) => {
     const isVerified = verificationStatus === 'approved' ? 1 : 0;
     const formattedPhone = formatIndianPhone(phone);
 
+    // Auto-generate unique school slug
+    const baseSlug = (schoolName.trim() || 'school')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '') || 'school';
+    let finalSlug = baseSlug;
+    const existingSlugs = await query('SELECT id FROM school_profiles WHERE slug = ?', [finalSlug]);
+    if (existingSlugs.length > 0) {
+      finalSlug = `${baseSlug}-${Date.now().toString().slice(-4)}`;
+    }
+
     const schoolRes = await query(
       `INSERT INTO school_profiles 
-       (user_id, school_name, contact_person, phone, city, state, board, address, website, registration_number, verification_status, is_verified)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (user_id, school_name, contact_person, phone, city, state, board, address, website, registration_number, verification_status, is_verified, slug)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         userId,
         schoolName.trim(),
@@ -420,18 +432,29 @@ const createSchool = async (req, res) => {
         website ? website.trim() : null,
         registrationNumber ? registrationNumber.trim() : null,
         verificationStatus,
-        isVerified
+        isVerified,
+        finalSlug
       ]
     );
 
+    // Send credentials email in background
+    sendAccountCredentialsEmail({
+      toEmail: cleanEmail,
+      name: schoolName.trim(),
+      role: 'school',
+      phone: formattedPhone,
+      password: pwd
+    }).catch((err) => console.warn('Credentials email error for school:', err.message));
+
     return res.status(201).json({
       success: true,
-      message: 'School created successfully.',
+      message: 'School created successfully and credentials dispatched via email.',
       data: {
         id: schoolRes.insertId,
         userId,
         schoolName,
         email: cleanEmail,
+        slug: finalSlug,
         verificationStatus
       }
     });
@@ -630,6 +653,95 @@ const impersonateUser = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: 'Failed to generate impersonation token: ' + error.message
+    });
+  }
+// POST /api/v1/admin/teachers - Admin manually creates a teacher
+const createTeacher = async (req, res) => {
+  try {
+    const {
+      fullName,
+      email,
+      password,
+      phone,
+      designation,
+      primarySubject,
+      experienceYears = 0,
+      highestQualification,
+      currentCity,
+      currentState,
+      accountStatus = 'active'
+    } = req.body;
+
+    if (!fullName || !email) {
+      return res.status(400).json({
+        success: false,
+        message: 'Teacher Full Name and Email Address are required.'
+      });
+    }
+
+    const cleanEmail = email.toLowerCase().trim();
+
+    // Check duplicate email
+    const existing = await query('SELECT id FROM users WHERE email = ?', [cleanEmail]);
+    if (existing.length > 0) {
+      return res.status(409).json({
+        success: false,
+        message: 'An account with this email address already exists.'
+      });
+    }
+
+    const pwd = password && password.trim() ? password.trim() : 'Teacher@123456';
+    const hashedPassword = await bcrypt.hash(pwd, 10);
+
+    const userRes = await query(
+      'INSERT INTO users (email, password, role, status) VALUES (?, ?, ?, ?)',
+      [cleanEmail, hashedPassword, 'teacher', accountStatus]
+    );
+    const userId = userRes.insertId;
+
+    const formattedPhone = formatIndianPhone(phone);
+
+    const teacherRes = await query(
+      `INSERT INTO teacher_profiles 
+       (user_id, full_name, phone, designation, primary_subject, highest_qualification, experience_years, current_city, current_state, profile_step)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+      [
+        userId,
+        fullName.trim(),
+        formattedPhone,
+        designation ? designation.trim() : 'TGT (Trained Graduate Teacher - Classes VI-X)',
+        primarySubject ? primarySubject.trim() : null,
+        highestQualification ? highestQualification.trim() : 'B.Ed',
+        parseInt(experienceYears, 10) || 0,
+        currentCity ? currentCity.trim() : null,
+        currentState ? currentState.trim() : null
+      ]
+    );
+
+    // Send credentials email in background
+    sendAccountCredentialsEmail({
+      toEmail: cleanEmail,
+      name: fullName.trim(),
+      role: 'teacher',
+      phone: formattedPhone,
+      password: pwd
+    }).catch((err) => console.warn('Credentials email error for teacher:', err.message));
+
+    return res.status(201).json({
+      success: true,
+      message: 'Teacher account created successfully and credentials dispatched via email.',
+      data: {
+        id: teacherRes.insertId,
+        userId,
+        fullName: fullName.trim(),
+        email: cleanEmail
+      }
+    });
+  } catch (error) {
+    console.error('createTeacher Error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to create teacher account: ' + error.message
     });
   }
 };
@@ -1119,6 +1231,7 @@ module.exports = {
   deleteSchool,
   updateSchoolVerification,
   getTeachers,
+  createTeacher,
   updateTeacher,
   deleteTeacher,
   impersonateUser,

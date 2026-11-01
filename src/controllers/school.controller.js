@@ -593,15 +593,22 @@ const searchSchools = async (req, res) => {
   }
 };
 
-// GET /api/v1/school/public/:id
+// GET /api/v1/school/public/:id (Accepts numeric ID or SEO slug)
 const getPublicSchoolProfile = async (req, res) => {
   try {
-    const schoolId = parseInt(req.params.id, 10);
-    const rows = await query('SELECT * FROM school_profiles WHERE id = ?', [schoolId]);
+    const identifier = req.params.id;
+    let rows = [];
+    if (/^\d+$/.test(identifier)) {
+      rows = await query('SELECT * FROM school_profiles WHERE id = ? OR slug = ?', [parseInt(identifier, 10), identifier]);
+    } else {
+      rows = await query('SELECT * FROM school_profiles WHERE slug = ?', [identifier]);
+    }
+
     if (rows.length === 0) {
       return res.status(404).json({ success: false, message: 'School not found.' });
     }
     const school = rows[0];
+    const schoolId = school.id;
 
     const safeParse = (val, fallback) => {
       if (!val) return fallback;
@@ -665,10 +672,18 @@ const getPublicSchoolProfile = async (req, res) => {
   }
 };
 
-// GET /api/v1/school/:id/staff
+// GET /api/v1/school/:id/staff (Supports numeric ID or slug)
 const getSchoolStaff = async (req, res) => {
   try {
-    const schoolId = parseInt(req.params.id, 10);
+    const identifier = req.params.id;
+    let schoolId = parseInt(identifier, 10);
+    if (isNaN(schoolId) || !/^\d+$/.test(identifier)) {
+      const schoolRows = await query('SELECT id FROM school_profiles WHERE slug = ? LIMIT 1', [identifier]);
+      if (!schoolRows.length) {
+        return res.status(404).json({ success: false, message: 'School not found.' });
+      }
+      schoolId = schoolRows[0].id;
+    }
 
     const staffRows = await query(
       `SELECT 
