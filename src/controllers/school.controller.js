@@ -131,19 +131,27 @@ const updateProfile = async (req, res) => {
 // POST /api/v1/school/upload-logo
 const uploadLogo = async (req, res) => {
   try {
-    if (!req.file) {
-      return res.status(400).json({
-        success: false,
-        message: 'No logo file provided.'
-      });
-    }
-
     const userId = req.user.id;
+    let logoUrl = '';
+
     const existingRows = await query('SELECT logo_url FROM school_profiles WHERE user_id = ?', [userId]);
     const oldLogoUrl = existingRows[0]?.logo_url;
 
-    const buffer = fs.readFileSync(req.file.path);
-    const logoUrl = await webdavService.uploadFile('logos', req.file.filename, buffer, req.file.mimetype);
+    if (req.file) {
+      const buffer = fs.readFileSync(req.file.path);
+      logoUrl = await webdavService.uploadFile('logos', req.file.filename, buffer, req.file.mimetype);
+    } else if (req.body?.logoBase64) {
+      const base64Data = req.body.logoBase64.replace(/^data:image\/\w+;base64,/, '');
+      const buffer = Buffer.from(base64Data, 'base64');
+      const filename = `logo-${userId}-${Date.now()}.png`;
+      logoUrl = await webdavService.uploadFile('logos', filename, buffer, 'image/png');
+    } else {
+      return res.status(400).json({
+        success: false,
+        message: 'No logo file or base64 image data provided.'
+      });
+    }
+
     await query('UPDATE school_profiles SET logo_url = ? WHERE user_id = ?', [logoUrl, userId]);
 
     // Clean up old logo from disk & WebDAV
@@ -168,19 +176,27 @@ const uploadLogo = async (req, res) => {
 // POST /api/v1/school/upload-banner
 const uploadBanner = async (req, res) => {
   try {
-    if (!req.file) {
-      return res.status(400).json({
-        success: false,
-        message: 'No banner image file provided.'
-      });
-    }
-
     const userId = req.user.id;
+    let bannerUrl = '';
+
     const existingRows = await query('SELECT banner_url FROM school_profiles WHERE user_id = ?', [userId]);
     const oldBannerUrl = existingRows[0]?.banner_url;
 
-    const buffer = fs.readFileSync(req.file.path);
-    const bannerUrl = await webdavService.uploadFile('schools', req.file.filename, buffer, req.file.mimetype);
+    if (req.file) {
+      const buffer = fs.readFileSync(req.file.path);
+      bannerUrl = await webdavService.uploadFile('schools', req.file.filename, buffer, req.file.mimetype);
+    } else if (req.body?.bannerBase64) {
+      const base64Data = req.body.bannerBase64.replace(/^data:image\/\w+;base64,/, '');
+      const buffer = Buffer.from(base64Data, 'base64');
+      const filename = `banner-${userId}-${Date.now()}.jpg`;
+      bannerUrl = await webdavService.uploadFile('schools', filename, buffer, 'image/jpeg');
+    } else {
+      return res.status(400).json({
+        success: false,
+        message: 'No banner image file or base64 data provided.'
+      });
+    }
+
     await query('UPDATE school_profiles SET banner_url = ? WHERE user_id = ?', [bannerUrl, userId]);
 
     // Clean up old banner from disk & WebDAV

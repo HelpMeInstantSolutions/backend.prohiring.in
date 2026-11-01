@@ -664,19 +664,38 @@ const getNetworkJobs = async (req, res) => {
       [userId]
     );
 
-    // 2. Nearby jobs (matching city or state)
+    // 2. Nearby jobs (matching coordinates, city, or state)
+    const teacherLat = parseFloat(teacher.latitude);
+    const teacherLng = parseFloat(teacher.longitude);
+    const hasTeacherCoords = !isNaN(teacherLat) && !isNaN(teacherLng);
+
+    const nearbyDistanceExpr = hasTeacherCoords
+      ? `(6371 * acos(
+          LEAST(1.0, GREATEST(-1.0,
+            cos(radians(${teacherLat})) * cos(radians(s.latitude)) *
+            cos(radians(s.longitude) - radians(${teacherLng})) +
+            sin(radians(${teacherLat})) * sin(radians(s.latitude))
+          ))
+        )) AS distance_km`
+      : 'NULL AS distance_km';
+
     const nearbyJobs = await query(
       `SELECT 
          j.id, j.title, j.designation, j.subject, j.salary_min, j.salary_max, j.job_type, j.openings,
          j.city, j.state, j.created_at,
          s.id AS school_id, s.school_name, s.logo_url AS school_logo, s.board, s.is_verified,
+         s.latitude AS school_latitude, s.longitude AS school_longitude,
+         ${nearbyDistanceExpr},
          CASE WHEN EXISTS (
            SELECT 1 FROM follows f WHERE f.target_type = 'school' AND f.target_id = s.id AND f.follower_user_id = ?
          ) THEN 1 ELSE 0 END AS is_followed
        FROM jobs j
        JOIN school_profiles s ON j.school_id = s.id
-       WHERE j.status = 'active' AND (j.city = ? OR j.state = ?)
-       ORDER BY CASE WHEN j.city = ? THEN 1 ELSE 2 END, j.created_at DESC
+       WHERE j.status = 'active' AND (
+         (j.city = ? OR j.state = ?)
+         ${hasTeacherCoords ? `OR (s.latitude IS NOT NULL AND s.longitude IS NOT NULL AND (6371 * acos(LEAST(1.0, GREATEST(-1.0, cos(radians(${teacherLat})) * cos(radians(s.latitude)) * cos(radians(s.longitude) - radians(${teacherLng})) + sin(radians(${teacherLat})) * sin(radians(s.latitude)))))) <= 50)` : ''}
+       )
+       ORDER BY ${hasTeacherCoords ? '(CASE WHEN distance_km IS NULL THEN 1 ELSE 0 END), distance_km ASC,' : ''} CASE WHEN j.city = ? THEN 1 ELSE 2 END, j.created_at DESC
        LIMIT 30`,
       [userId, teacherCity, teacherState, teacherCity]
     );
@@ -687,6 +706,8 @@ const getNetworkJobs = async (req, res) => {
          j.id, j.title, j.designation, j.subject, j.salary_min, j.salary_max, j.job_type, j.openings,
          j.city, j.state, j.created_at,
          s.id AS school_id, s.school_name, s.logo_url AS school_logo, s.board, s.is_verified,
+         s.latitude AS school_latitude, s.longitude AS school_longitude,
+         ${nearbyDistanceExpr},
          CASE WHEN EXISTS (
            SELECT 1 FROM follows f WHERE f.target_type = 'school' AND f.target_id = s.id AND f.follower_user_id = ?
          ) THEN 1 ELSE 0 END AS is_followed
@@ -704,7 +725,12 @@ const getNetworkJobs = async (req, res) => {
         followedJobs,
         nearbyJobs,
         recommendedJobs,
-        teacherLocation: { city: teacherCity, state: teacherState }
+        teacherLocation: {
+          city: teacherCity,
+          state: teacherState,
+          latitude: teacher.latitude,
+          longitude: teacher.longitude
+        }
       }
     });
   } catch (error) {
