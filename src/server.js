@@ -592,12 +592,30 @@ async function autoMigrateColumns() {
       console.warn('[Auto-Migrate] System settings alter warning:', sErr.message);
     }
 
+    // Ensure jobs table has share_code column and backfill null codes
     try {
-      const logosDir = path.join(__dirname, '../uploads/logos');
-      if (!fs.existsSync(logosDir)) {
-        fs.mkdirSync(logosDir, { recursive: true });
+      const [jobCols] = await pool.query(
+        `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS 
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'jobs' AND COLUMN_NAME = 'share_code'`
+      );
+      if (jobCols.length === 0) {
+        console.log('[Auto-Migrate] Adding share_code column to jobs table...');
+        await pool.query('ALTER TABLE `jobs` ADD COLUMN `share_code` VARCHAR(32) UNIQUE DEFAULT NULL');
       }
-    } catch (dErr) {}
+
+      // Backfill any jobs where share_code is null
+      const [nullJobs] = await pool.query("SELECT id FROM `jobs` WHERE `share_code` IS NULL OR `share_code` = ''");
+      if (nullJobs && nullJobs.length > 0) {
+        console.log(`[Auto-Migrate] Backfilling share_code for ${nullJobs.length} jobs...`);
+        const crypto = require('crypto');
+        for (const j of nullJobs) {
+          const code = crypto.randomBytes(4).toString('hex');
+          await pool.query('UPDATE `jobs` SET `share_code` = ? WHERE `id` = ?', [code, j.id]);
+        }
+      }
+    } catch (jErr) {
+      console.warn('[Auto-Migrate] Jobs share_code alter warning:', jErr.message);
+    }
 
     console.log('[Auto-Migrate] Teacher profile columns, suggestions, system_settings, and posts/designations taxonomy verified.');
   } catch (err) {

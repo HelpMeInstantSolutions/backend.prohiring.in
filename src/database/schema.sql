@@ -106,10 +106,12 @@ CREATE TABLE IF NOT EXISTS `jobs` (
   `city` VARCHAR(100) NOT NULL,
   `state` VARCHAR(100) NOT NULL,
   `deadline` DATE DEFAULT NULL,
+  `share_code` VARCHAR(32) UNIQUE DEFAULT NULL,
   `status` ENUM('active', 'closed', 'draft') DEFAULT 'active',
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   INDEX idx_jobs_subject_city (`subject`, `city`, `status`),
+  INDEX idx_jobs_share_code (`share_code`),
   INDEX idx_jobs_status (`status`),
   FOREIGN KEY (`school_id`) REFERENCES `school_profiles` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

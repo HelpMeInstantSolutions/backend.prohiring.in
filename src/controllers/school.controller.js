@@ -255,10 +255,13 @@ const postJob = async (req, res) => {
       });
     }
 
+    const crypto = require('crypto');
+    const shareCode = crypto.randomBytes(4).toString('hex');
+
     const result = await query(
       `INSERT INTO jobs 
-       (school_id, title, designation, subject, qualification_required, experience_required, salary_min, salary_max, salary_negotiable, job_type, openings, description, responsibilities, benefits, city, state, deadline, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (school_id, title, designation, subject, qualification_required, experience_required, salary_min, salary_max, salary_negotiable, job_type, openings, description, responsibilities, benefits, city, state, deadline, status, share_code)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         school.id,
         title.trim(),
@@ -277,14 +280,15 @@ const postJob = async (req, res) => {
         jobCity,
         jobState,
         deadline || null,
-        'active'
+        'active',
+        shareCode
       ]
     );
 
     return res.status(201).json({
       success: true,
       message: 'Vacancy posted successfully!',
-      data: { jobId: result.insertId }
+      data: { jobId: result.insertId, shareCode }
     });
   } catch (error) {
     console.error('postJob Error:', error);

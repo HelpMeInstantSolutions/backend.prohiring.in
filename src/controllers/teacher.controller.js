@@ -651,7 +651,7 @@ const getNetworkJobs = async (req, res) => {
     // 1. Followed schools' jobs
     const followedJobs = await query(
       `SELECT 
-         j.id, j.title, j.designation, j.subject, j.salary_min, j.salary_max, j.job_type, j.openings,
+         j.id, j.share_code, j.title, j.designation, j.subject, j.salary_min, j.salary_max, j.job_type, j.openings,
          j.city, j.state, j.created_at,
          s.id AS school_id, s.school_name, s.logo_url AS school_logo, s.board, s.is_verified,
          1 AS is_followed
@@ -681,7 +681,7 @@ const getNetworkJobs = async (req, res) => {
 
     const nearbyJobs = await query(
       `SELECT 
-         j.id, j.title, j.designation, j.subject, j.salary_min, j.salary_max, j.job_type, j.openings,
+         j.id, j.share_code, j.title, j.designation, j.subject, j.salary_min, j.salary_max, j.job_type, j.openings,
          j.city, j.state, j.created_at,
          s.id AS school_id, s.school_name, s.logo_url AS school_logo, s.board, s.is_verified,
          s.latitude AS school_latitude, s.longitude AS school_longitude,
@@ -703,7 +703,7 @@ const getNetworkJobs = async (req, res) => {
     // 3. Recommended jobs (matching subject or designation)
     const recommendedJobs = await query(
       `SELECT 
-         j.id, j.title, j.designation, j.subject, j.salary_min, j.salary_max, j.job_type, j.openings,
+         j.id, j.share_code, j.title, j.designation, j.subject, j.salary_min, j.salary_max, j.job_type, j.openings,
          j.city, j.state, j.created_at,
          s.id AS school_id, s.school_name, s.logo_url AS school_logo, s.board, s.is_verified,
          s.latitude AS school_latitude, s.longitude AS school_longitude,
