@@ -24,7 +24,15 @@ async function runMigration() {
     const schemaSql = fs.readFileSync(schemaPath, 'utf8');
 
     console.log('Executing database schema migration...');
-    await connection.query(schemaSql);
+    try {
+      await connection.query(schemaSql);
+    } catch (sqlErr) {
+      if (sqlErr.code === 'ER_DUP_KEYNAME') {
+        console.warn('Notice: Indexes already exist, continuing with column checks...');
+      } else {
+        throw sqlErr;
+      }
+    }
 
     // Ensure all multi-step resume columns exist in teacher_profiles table
     const columnsToEnsure = [

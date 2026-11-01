@@ -22,7 +22,8 @@ CREATE TABLE IF NOT EXISTS `users` (
   `reset_token` VARCHAR(255) DEFAULT NULL,
   `reset_token_expiry` DATETIME DEFAULT NULL,
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_users_role (`role`, `status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- 3. Teacher Profiles
@@ -108,6 +109,8 @@ CREATE TABLE IF NOT EXISTS `jobs` (
   `status` ENUM('active', 'closed', 'draft') DEFAULT 'active',
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_jobs_subject_city (`subject`, `city`, `status`),
+  INDEX idx_jobs_status (`status`),
   FOREIGN KEY (`school_id`) REFERENCES `school_profiles` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -165,9 +168,4 @@ CREATE TABLE IF NOT EXISTS `otps` (
   INDEX idx_email (`email`),
   INDEX idx_phone (`phone`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Indexes for ultra-fast query performance
-CREATE INDEX idx_jobs_subject_city ON `jobs` (`subject`, `city`, `status`);
-CREATE INDEX idx_jobs_status ON `jobs` (`status`);
-CREATE INDEX idx_users_role ON `users` (`role`, `status`);
 
