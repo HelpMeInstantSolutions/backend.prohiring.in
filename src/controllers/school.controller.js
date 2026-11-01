@@ -222,7 +222,7 @@ const uploadBanner = async (req, res) => {
 const postJob = async (req, res) => {
   try {
     const userId = req.user.id;
-    const schoolRows = await query('SELECT id, is_verified FROM school_profiles WHERE user_id = ?', [userId]);
+    const schoolRows = await query('SELECT id, is_verified, city, state FROM school_profiles WHERE user_id = ?', [userId]);
     if (schoolRows.length === 0) return res.status(404).json({ success: false, message: 'School profile not found.' });
 
     const school = schoolRows[0];
@@ -245,10 +245,13 @@ const postJob = async (req, res) => {
       deadline
     } = req.body;
 
-    if (!title || !designation || !subject || !description || !city || !state) {
+    const jobCity = (city || school.city || '').trim();
+    const jobState = (state || school.state || '').trim();
+
+    if (!title || !designation || !subject || !description || !jobCity || !jobState) {
       return res.status(400).json({
         success: false,
-        message: 'Title, designation, subject, description, city, and state are mandatory fields.'
+        message: 'Title, designation, subject, description, and school location (city and state) are mandatory.'
       });
     }
 
@@ -271,8 +274,8 @@ const postJob = async (req, res) => {
         description,
         responsibilities || null,
         benefits || null,
-        city.trim(),
-        state.trim(),
+        jobCity,
+        jobState,
         deadline || null,
         'active'
       ]
