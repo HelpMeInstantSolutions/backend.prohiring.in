@@ -67,8 +67,11 @@ app.use(cors({
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Static uploads directory for resumes and school logos
+// Static uploads directory with Nextcloud WebDAV cloud storage fallback
+const storageRoutes = require('./routes/storage.routes');
+const storageController = require('./controllers/storage.controller');
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
+app.get('/uploads/:subfolder/:filename', storageController.serveFile);
 
 // Health check endpoint
 app.get('/api/health', async (req, res) => {
@@ -96,6 +99,7 @@ app.use('/api/v1/teacher', teacherRoutes);
 app.use('/api/v1/school', schoolRoutes);
 app.use('/api/v1/network', networkRoutes);
 app.use('/api/v1/community', communityRoutes);
+app.use('/api/v1/storage', storageRoutes);
 app.use('/api/v1/admin', adminRoutes);
 
 // 404 Route Handler

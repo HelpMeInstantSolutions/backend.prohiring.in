@@ -1,4 +1,7 @@
+const fs = require('fs');
+const path = require('path');
 const { query } = require('../config/database');
+const webdavService = require('../services/webdav.service');
 
 // GET /api/v1/school/profile
 const getProfile = async (req, res) => {
@@ -118,7 +121,8 @@ const uploadLogo = async (req, res) => {
       });
     }
 
-    const logoUrl = `/uploads/logos/${req.file.filename}`;
+    const buffer = fs.readFileSync(req.file.path);
+    const logoUrl = await webdavService.uploadFile('logos', req.file.filename, buffer, req.file.mimetype);
     await query('UPDATE school_profiles SET logo_url = ? WHERE user_id = ?', [logoUrl, req.user.id]);
 
     return res.status(200).json({

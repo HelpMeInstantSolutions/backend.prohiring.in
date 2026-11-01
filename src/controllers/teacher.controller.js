@@ -263,6 +263,8 @@ const updateProfile = async (req, res) => {
   }
 };
 
+const webdavService = require('../services/webdav.service');
+
 // POST /api/v1/teacher/upload-avatar
 const uploadAvatar = async (req, res) => {
   try {
@@ -270,15 +272,13 @@ const uploadAvatar = async (req, res) => {
     let avatarUrl = '';
 
     if (req.file) {
-      avatarUrl = `/uploads/avatars/${req.file.filename}`;
+      const buffer = fs.readFileSync(req.file.path);
+      avatarUrl = await webdavService.uploadFile('avatars', req.file.filename, buffer, req.file.mimetype);
     } else if (req.body.avatarBase64) {
       const base64Data = req.body.avatarBase64.replace(/^data:image\/\w+;base64,/, '');
       const buffer = Buffer.from(base64Data, 'base64');
       const filename = `avatar-${userId}-${Date.now()}.jpg`;
-      const avatarsDir = path.join(__dirname, '../../uploads/avatars');
-      if (!fs.existsSync(avatarsDir)) fs.mkdirSync(avatarsDir, { recursive: true });
-      fs.writeFileSync(path.join(avatarsDir, filename), buffer);
-      avatarUrl = `/uploads/avatars/${filename}`;
+      avatarUrl = await webdavService.uploadFile('avatars', filename, buffer, 'image/jpeg');
     } else {
       return res.status(400).json({
         success: false,
@@ -312,7 +312,8 @@ const uploadResume = async (req, res) => {
       });
     }
 
-    const resumeUrl = `/uploads/resumes/${req.file.filename}`;
+    const buffer = fs.readFileSync(req.file.path);
+    const resumeUrl = await webdavService.uploadFile('resumes', req.file.filename, buffer, req.file.mimetype);
     await query('UPDATE teacher_profiles SET resume_url = ? WHERE user_id = ?', [resumeUrl, req.user.id]);
 
     return res.status(200).json({
