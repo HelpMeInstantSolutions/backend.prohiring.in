@@ -11,6 +11,13 @@ const followTarget = async (req, res) => {
     const followerRole = req.user.role;
     const { targetType, targetId } = req.body;
 
+    if (followerRole !== 'teacher') {
+      return res.status(403).json({
+        success: false,
+        message: 'Only registered teachers can follow schools or other educators.'
+      });
+    }
+
     if (!['school', 'teacher'].includes(targetType) || !targetId) {
       return res.status(400).json({
         success: false,
@@ -184,9 +191,63 @@ const getMyFollowing = async (req, res) => {
   }
 };
 
+/**
+ * Get list of followers for the current user
+ * GET /api/v1/network/followers
+ */
+const getMyFollowers = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const userRole = req.user.role;
+    let targetId = null;
+
+    if (userRole === 'teacher') {
+      const t = await query('SELECT id FROM teacher_profiles WHERE user_id = ?', [userId]);
+      if (t.length > 0) targetId = t[0].id;
+    } else if (userRole === 'school') {
+      const s = await query('SELECT id FROM school_profiles WHERE user_id = ?', [userId]);
+      if (s.length > 0) targetId = s[0].id;
+    }
+
+    if (!targetId) {
+      return res.status(200).json({
+        success: true,
+        data: { followers: [], totalFollowers: 0 }
+      });
+    }
+
+    const followers = await query(
+      `SELECT u.id as user_id, u.email, u.role,
+              t.id as teacher_id, t.full_name, t.primary_subject, t.designation, t.current_city, t.current_state, t.avatar_url,
+              f.created_at as followed_at
+       FROM follows f
+       JOIN users u ON f.follower_user_id = u.id
+       LEFT JOIN teacher_profiles t ON t.user_id = u.id
+       WHERE f.target_type = ? AND f.target_id = ?
+       ORDER BY f.created_at DESC`,
+      [userRole, targetId]
+    );
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        followers,
+        totalFollowers: followers.length
+      }
+    });
+  } catch (error) {
+    console.error('getMyFollowers Error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to retrieve followers.'
+    });
+  }
+};
+
 module.exports = {
   followTarget,
   unfollowTarget,
   getFollowStatus,
-  getMyFollowing
+  getMyFollowing,
+  getMyFollowers
 };

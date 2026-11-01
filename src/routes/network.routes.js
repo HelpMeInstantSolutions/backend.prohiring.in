@@ -17,5 +17,6 @@ router.get('/status', (req, res, next) => {
 router.post('/follow', authenticate, networkController.followTarget);
 router.post('/unfollow', authenticate, networkController.unfollowTarget);
 router.get('/following', authenticate, networkController.getMyFollowing);
+router.get('/followers', authenticate, networkController.getMyFollowers);
 
 module.exports = router;
