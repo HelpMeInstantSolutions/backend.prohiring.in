@@ -226,16 +226,17 @@ const updateProfile = async (req, res) => {
           if (matches.length > 0) matchedSchoolId = matches[0].id;
         }
         if (matchedSchoolId) {
-          const tenureFrom = pj.fromYear || pj.startDate || '';
-          const tenureTo = pj.toYear || pj.endDate || '';
+          const tenureFrom = pj.fromMonth ? `${pj.fromMonth} ${pj.fromYear || ''}`.trim() : (pj.fromYear || pj.startDate || '');
+          const tenureTo = pj.isCurrent ? 'Present' : (pj.toMonth ? `${pj.toMonth} ${pj.toYear || ''}`.trim() : (pj.toYear || pj.endDate || ''));
+          const staffCategory = pj.postType || teacherCategory;
           await query(
             `INSERT INTO school_staff (school_id, teacher_id, status, category, designation, subject, from_year, to_year)
              VALUES (?, ?, 'previous', ?, ?, ?, ?, ?)
-             ON DUPLICATE KEY UPDATE status = 'previous', designation = VALUES(designation), subject = VALUES(subject), to_year = VALUES(to_year)`,
+             ON DUPLICATE KEY UPDATE status = 'previous', category = VALUES(category), designation = VALUES(designation), subject = VALUES(subject), from_year = VALUES(from_year), to_year = VALUES(to_year)`,
             [
               matchedSchoolId,
               teacherId,
-              teacherCategory,
+              staffCategory,
               pj.designation || teacherDesignation,
               pj.subject || teacherSubject,
               tenureFrom,
