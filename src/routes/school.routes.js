@@ -26,6 +26,7 @@ router.get('/profile', schoolController.getProfile);
 
 router.put('/profile', schoolController.updateProfile);
 router.post('/upload-logo', upload.single('logo'), schoolController.uploadLogo);
+router.post('/upload-banner', upload.single('banner'), schoolController.uploadBanner);
 router.get('/dashboard', schoolController.getSchoolDashboard);
 
 // Vacancies management

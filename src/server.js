@@ -137,7 +137,10 @@ async function autoMigrateColumns() {
       ['previous_jobs_data', 'LONGTEXT DEFAULT NULL'],
       ['current_job_data', 'LONGTEXT DEFAULT NULL'],
       ['tet_details', 'LONGTEXT DEFAULT NULL'],
-      ['profile_step', 'INT DEFAULT 1']
+      ['profile_step', 'INT DEFAULT 1'],
+      ['latitude', 'DECIMAL(10, 8) DEFAULT NULL'],
+      ['longitude', 'DECIMAL(11, 8) DEFAULT NULL'],
+      ['preferred_location', 'TEXT DEFAULT NULL']
     ];
 
     for (const [colName, colDef] of columnsToEnsure) {
@@ -152,7 +155,7 @@ async function autoMigrateColumns() {
       }
     }
 
-    // 2. School profile rich fields
+    // 2. School profile rich fields & location
     const schoolColumnsToEnsure = [
       ['established_year', 'INT DEFAULT NULL'],
       ['institution_type', 'VARCHAR(100) DEFAULT \'K-12 School\''],
@@ -160,7 +163,11 @@ async function autoMigrateColumns() {
       ['student_count', 'VARCHAR(50) DEFAULT NULL'],
       ['faculty_count', 'VARCHAR(50) DEFAULT NULL'],
       ['social_links', 'TEXT DEFAULT NULL'],
-      ['campus_photos', 'TEXT DEFAULT NULL']
+      ['campus_photos', 'TEXT DEFAULT NULL'],
+      ['latitude', 'DECIMAL(10, 8) DEFAULT NULL'],
+      ['longitude', 'DECIMAL(11, 8) DEFAULT NULL'],
+      ['maps_url', 'TEXT DEFAULT NULL'],
+      ['banner_url', 'TEXT DEFAULT NULL']
     ];
 
     for (const [colName, colDef] of schoolColumnsToEnsure) {

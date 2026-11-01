@@ -51,7 +51,13 @@ const updateProfile = async (req, res) => {
       studentCount,
       facultyCount,
       socialLinks,
-      campusPhotos
+      campusPhotos,
+      latitude,
+      longitude,
+      mapsUrl,
+      maps_url,
+      bannerUrl,
+      banner_url
     } = req.body;
 
     const serialize = (val) => {
@@ -59,6 +65,9 @@ const updateProfile = async (req, res) => {
       if (typeof val === 'string') return val;
       return JSON.stringify(val);
     };
+
+    const finalMapsUrl = mapsUrl || maps_url || null;
+    const finalBannerUrl = bannerUrl || banner_url || null;
 
     await query(
       `UPDATE school_profiles 
@@ -79,7 +88,11 @@ const updateProfile = async (req, res) => {
            student_count = COALESCE(?, student_count),
            faculty_count = COALESCE(?, faculty_count),
            social_links = COALESCE(?, social_links),
-           campus_photos = COALESCE(?, campus_photos)
+           campus_photos = COALESCE(?, campus_photos),
+           latitude = COALESCE(?, latitude),
+           longitude = COALESCE(?, longitude),
+           maps_url = COALESCE(?, maps_url),
+           banner_url = COALESCE(?, banner_url)
        WHERE user_id = ?`,
       [
         schoolName, board, registrationNumber, contactPerson, phone, address, city, state, pincode, website, about,
@@ -90,6 +103,10 @@ const updateProfile = async (req, res) => {
         facultyCount,
         serialize(socialLinks),
         serialize(campusPhotos),
+        latitude !== undefined ? latitude : null,
+        longitude !== undefined ? longitude : null,
+        finalMapsUrl,
+        finalBannerUrl,
         userId
       ]
     );
@@ -135,6 +152,34 @@ const uploadLogo = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: 'Failed to upload logo.'
+    });
+  }
+};
+
+// POST /api/v1/school/upload-banner
+const uploadBanner = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: 'No banner image file provided.'
+      });
+    }
+
+    const buffer = fs.readFileSync(req.file.path);
+    const bannerUrl = await webdavService.uploadFile('schools', req.file.filename, buffer, req.file.mimetype);
+    await query('UPDATE school_profiles SET banner_url = ? WHERE user_id = ?', [bannerUrl, req.user.id]);
+
+    return res.status(200).json({
+      success: true,
+      message: 'Campus banner uploaded successfully.',
+      data: { bannerUrl }
+    });
+  } catch (error) {
+    console.error('uploadBanner Error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to upload banner.'
     });
   }
 };
@@ -656,6 +701,7 @@ module.exports = {
   getProfile,
   updateProfile,
   uploadLogo,
+  uploadBanner,
   postJob,
   getMyJobs,
   updateJob,

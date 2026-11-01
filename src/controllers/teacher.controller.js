@@ -74,7 +74,11 @@ const updateProfile = async (req, res) => {
       previousJobsData,
       currentJobData,
       tetDetails,
-      profileStep
+      profileStep,
+      latitude,
+      longitude,
+      preferredLocation,
+      preferred_location
     } = req.body;
 
     const serialize = (val) => {
@@ -93,6 +97,9 @@ const updateProfile = async (req, res) => {
       currentCity, currentState, expectedSalaryMin, expectedSalaryMax, bio,
       serialize(familyDetails), serialize(qualificationsData), serialize(previousJobsData),
       serialize(currentJobData), serialize(tetDetails), profileStep || 1,
+      latitude !== undefined ? latitude : null,
+      longitude !== undefined ? longitude : null,
+      preferredLocation || preferred_location || null,
       isCompleted ? 1 : 0, userId
     ].map((v) => (v === undefined ? null : v));
 
@@ -124,6 +131,9 @@ const updateProfile = async (req, res) => {
            current_job_data = COALESCE(?, current_job_data),
            tet_details = COALESCE(?, tet_details),
            profile_step = COALESCE(?, profile_step),
+           latitude = COALESCE(?, latitude),
+           longitude = COALESCE(?, longitude),
+           preferred_location = COALESCE(?, preferred_location),
            is_profile_completed = ?
        WHERE user_id = ?`,
       updateParams
