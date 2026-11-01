@@ -1,4 +1,28 @@
 const { query } = require('../config/database');
+const webdavService = require('../services/webdav.service');
+
+// Helper to auto-convert base64 logo or favicon into aaPanel local disk files
+async function processSettingValue(key, value) {
+  if (!value || typeof value !== 'string') return value;
+  if ((key === 'logo_url' || key === 'favicon_url') && value.startsWith('data:image/')) {
+    try {
+      const matches = value.match(/^data:([A-Za-z0-9\/+.-]+);base64,(.+)$/);
+      if (matches && matches.length === 3) {
+        const mimeType = matches[1];
+        const buffer = Buffer.from(matches[2], 'base64');
+        const ext = mimeType.includes('png') ? '.png' : (mimeType.includes('webp') ? '.webp' : (mimeType.includes('svg') ? '.svg' : (mimeType.includes('ico') ? '.ico' : '.jpg')));
+        const prefix = key === 'logo_url' ? 'logo' : 'favicon';
+        const filename = `${prefix}-${Date.now()}${ext}`;
+        const relativeUrl = await webdavService.uploadFile('logos', filename, buffer, mimeType);
+        console.log(`[config.controller] Successfully auto-converted ${key} base64 into ${relativeUrl}`);
+        return relativeUrl;
+      }
+    } catch (err) {
+      console.error(`[config.controller] Error auto-converting ${key} base64 to file:`, err);
+    }
+  }
+  return value;
+}
 
 // GET /api/v1/config/app-settings (Public)
 // Returns dynamic platform settings so Android app and Next.js frontends can adapt branding
@@ -77,21 +101,23 @@ const updateSettings = async (req, res) => {
     if (Array.isArray(settings)) {
       for (const item of settings) {
         if (item.key && item.value !== undefined) {
+          const finalVal = await processSettingValue(item.key, item.value);
           await query(
-            `INSERT INTO system_settings (setting_key, setting_value)
-             VALUES (?, ?)
-             ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)`,
-            [item.key, String(item.value)]
+            `INSERT INTO system_settings (setting_key, setting_value, is_public)
+             VALUES (?, ?, 1)
+             ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value), is_public = 1`,
+            [item.key, String(finalVal)]
           );
         }
       }
     } else if (typeof settings === 'object') {
       for (const [key, value] of Object.entries(settings)) {
+        const finalVal = await processSettingValue(key, value);
         await query(
-          `INSERT INTO system_settings (setting_key, setting_value)
-           VALUES (?, ?)
-           ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)`,
-          [key, String(value)]
+          `INSERT INTO system_settings (setting_key, setting_value, is_public)
+           VALUES (?, ?, 1)
+           ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value), is_public = 1`,
+          [key, String(finalVal)]
         );
       }
     }

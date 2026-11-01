@@ -48,17 +48,18 @@ const uploadFile = async (req, res) => {
       fileBuffer = req.file.buffer || fs.readFileSync(req.file.path);
       filename = req.file.filename || `${subfolder}-${Date.now()}-${Math.round(Math.random() * 1e6)}${path.extname(req.file.originalname)}`;
       mimeType = req.file.mimetype;
-    } else if (req.body.base64) {
-      const matches = req.body.base64.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+    } else if (req.body.base64 || req.body.bufferBase64) {
+      const rawBase64 = req.body.base64 || req.body.bufferBase64;
+      const matches = String(rawBase64).match(/^data:([A-Za-z0-9\/+.-]+);base64,(.+)$/);
       if (matches && matches.length === 3) {
         mimeType = matches[1];
         fileBuffer = Buffer.from(matches[2], 'base64');
       } else {
-        fileBuffer = Buffer.from(req.body.base64, 'base64');
-        mimeType = 'image/jpeg';
+        fileBuffer = Buffer.from(rawBase64, 'base64');
+        mimeType = req.body.mimeType || 'image/png';
       }
-      const ext = mimeType.includes('png') ? '.png' : (mimeType.includes('webp') ? '.webp' : '.jpg');
-      filename = `${subfolder}-${Date.now()}-${Math.round(Math.random() * 1e6)}${ext}`;
+      const ext = mimeType.includes('png') ? '.png' : (mimeType.includes('webp') ? '.webp' : (mimeType.includes('svg') ? '.svg' : (mimeType.includes('ico') ? '.ico' : '.jpg')));
+      filename = req.body.filename || `${subfolder}-${Date.now()}-${Math.round(Math.random() * 1e6)}${ext}`;
     } else {
       return res.status(400).json({
         success: false,

@@ -567,7 +567,24 @@ async function autoMigrateColumns() {
       console.log('[Auto-Migrate] Initial taxonomy seeded successfully.');
     }
 
-    console.log('[Auto-Migrate] Teacher profile columns, suggestions, and posts/designations taxonomy verified.');
+    // Ensure system_settings supports larger payloads (MEDIUMTEXT) and logo/favicon are public
+    try {
+      await pool.query('ALTER TABLE `system_settings` MODIFY COLUMN `setting_value` MEDIUMTEXT');
+      await pool.query(`
+        UPDATE \`system_settings\` 
+        SET \`is_public\` = 1 
+        WHERE \`setting_key\` IN ('logo_url', 'favicon_url', 'app_name', 'app_tagline', 'brand_domain', 'primary_color', 'secondary_color', 'support_email', 'support_phone', 'whatsapp_enabled', 'whatsapp_number', 'whatsapp_message', 'whatsapp_position')
+      `);
+      // Ensure local upload logos folder
+      const logosDir = path.join(__dirname, '../uploads/logos');
+      if (!fs.existsSync(logosDir)) {
+        fs.mkdirSync(logosDir, { recursive: true });
+      }
+    } catch (sErr) {
+      console.warn('[Auto-Migrate] System settings alter warning:', sErr.message);
+    }
+
+    console.log('[Auto-Migrate] Teacher profile columns, suggestions, system_settings, and posts/designations taxonomy verified.');
   } catch (err) {
     console.warn('[Auto-Migrate] Column check warning:', err.message);
   }
