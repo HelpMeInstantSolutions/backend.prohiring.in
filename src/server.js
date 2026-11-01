@@ -120,6 +120,8 @@ async function autoMigrateColumns() {
       ['pincode', 'VARCHAR(20) DEFAULT NULL'],
       ['languages', 'VARCHAR(255) DEFAULT NULL'],
       ['headline', 'VARCHAR(255) DEFAULT NULL'],
+      ['post_type', 'VARCHAR(100) DEFAULT \'Teaching Staff\''],
+      ['designation', 'VARCHAR(150) DEFAULT \'TGT (Trained Graduate Teacher - Classes VI-X)\''],
       ['family_details', 'LONGTEXT DEFAULT NULL'],
       ['qualifications_data', 'LONGTEXT DEFAULT NULL'],
       ['previous_jobs_data', 'LONGTEXT DEFAULT NULL'],

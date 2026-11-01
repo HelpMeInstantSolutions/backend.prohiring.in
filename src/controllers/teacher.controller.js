@@ -57,6 +57,8 @@ const updateProfile = async (req, res) => {
       pincode,
       languages,
       headline,
+      postType,
+      designation,
       highestQualification,
       specialization,
       experienceYears,
@@ -86,6 +88,7 @@ const updateProfile = async (req, res) => {
 
     const updateParams = [
       fullName, phone, gender, dob, address, pincode, languages, headline,
+      postType, designation,
       highestQualification, specialization, experienceYears, primarySubject, secondarySubjects,
       currentCity, currentState, expectedSalaryMin, expectedSalaryMax, bio,
       serialize(familyDetails), serialize(qualificationsData), serialize(previousJobsData),
@@ -103,6 +106,8 @@ const updateProfile = async (req, res) => {
            pincode = COALESCE(?, pincode),
            languages = COALESCE(?, languages),
            headline = COALESCE(?, headline),
+           post_type = COALESCE(?, post_type),
+           designation = COALESCE(?, designation),
            highest_qualification = COALESCE(?, highest_qualification),
            specialization = COALESCE(?, specialization),
            experience_years = COALESCE(?, experience_years),
