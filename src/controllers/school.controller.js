@@ -41,8 +41,21 @@ const updateProfile = async (req, res) => {
       state,
       pincode,
       website,
-      about
+      about,
+      establishedYear,
+      institutionType,
+      facilities,
+      studentCount,
+      facultyCount,
+      socialLinks,
+      campusPhotos
     } = req.body;
+
+    const serialize = (val) => {
+      if (val === undefined || val === null) return null;
+      if (typeof val === 'string') return val;
+      return JSON.stringify(val);
+    };
 
     await query(
       `UPDATE school_profiles 
@@ -56,9 +69,26 @@ const updateProfile = async (req, res) => {
            state = COALESCE(?, state),
            pincode = COALESCE(?, pincode),
            website = COALESCE(?, website),
-           about = COALESCE(?, about)
+           about = COALESCE(?, about),
+           established_year = COALESCE(?, established_year),
+           institution_type = COALESCE(?, institution_type),
+           facilities = COALESCE(?, facilities),
+           student_count = COALESCE(?, student_count),
+           faculty_count = COALESCE(?, faculty_count),
+           social_links = COALESCE(?, social_links),
+           campus_photos = COALESCE(?, campus_photos)
        WHERE user_id = ?`,
-      [schoolName, board, registrationNumber, contactPerson, phone, address, city, state, pincode, website, about, userId]
+      [
+        schoolName, board, registrationNumber, contactPerson, phone, address, city, state, pincode, website, about,
+        establishedYear ? parseInt(establishedYear, 10) : null,
+        institutionType,
+        serialize(facilities),
+        studentCount,
+        facultyCount,
+        serialize(socialLinks),
+        serialize(campusPhotos),
+        userId
+      ]
     );
 
     const updated = await query('SELECT * FROM school_profiles WHERE user_id = ?', [userId]);
@@ -76,6 +106,7 @@ const updateProfile = async (req, res) => {
     });
   }
 };
+
 
 // POST /api/v1/school/upload-logo
 const uploadLogo = async (req, res) => {
@@ -449,6 +480,174 @@ const getSchoolDashboard = async (req, res) => {
   }
 };
 
+// GET /api/v1/school/search?q=...&city=...
+const searchSchools = async (req, res) => {
+  try {
+    const q = (req.query.q || '').trim();
+    const city = (req.query.city || '').trim();
+
+    let sql = `
+      SELECT id, school_name, board, city, state, logo_url, is_verified, verification_status
+      FROM school_profiles
+      WHERE 1=1
+    `;
+    const params = [];
+    if (q) {
+      sql += ' AND (school_name LIKE ? OR city LIKE ?)';
+      params.push(`%${q}%`, `%${q}%`);
+    }
+    if (city) {
+      sql += ' AND city LIKE ?';
+      params.push(`%${city}%`);
+    }
+    sql += ' ORDER BY is_verified DESC, school_name ASC LIMIT 25';
+
+    const rows = await query(sql, params);
+    return res.status(200).json({ success: true, data: rows });
+  } catch (err) {
+    console.error('searchSchools Error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to search schools.' });
+  }
+};
+
+// GET /api/v1/school/public/:id
+const getPublicSchoolProfile = async (req, res) => {
+  try {
+    const schoolId = parseInt(req.params.id, 10);
+    const rows = await query('SELECT * FROM school_profiles WHERE id = ?', [schoolId]);
+    if (rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'School not found.' });
+    }
+    const school = rows[0];
+
+    const safeParse = (val, fallback) => {
+      if (!val) return fallback;
+      if (typeof val === 'object') return val;
+      try { return JSON.parse(val); } catch { return fallback; }
+    };
+    school.facilities = safeParse(school.facilities, []);
+    school.campus_photos = safeParse(school.campus_photos, []);
+    school.social_links = safeParse(school.social_links, {});
+
+    // Active vacancies
+    const activeJobs = await query(
+      `SELECT id, title, designation, subject, salary_min, salary_max, job_type, openings, city, state, created_at
+       FROM jobs 
+       WHERE school_id = ? AND status = 'active'
+       ORDER BY created_at DESC`,
+      [schoolId]
+    );
+
+    // Follower count & follow state
+    const followerRows = await query(
+      'SELECT COUNT(*) as count FROM follows WHERE target_type = "school" AND target_id = ?',
+      [schoolId]
+    );
+
+    let isFollowing = false;
+    if (req.user?.id) {
+      const followCheck = await query(
+        'SELECT id FROM follows WHERE follower_user_id = ? AND target_type = "school" AND target_id = ?',
+        [req.user.id, schoolId]
+      );
+      isFollowing = followCheck.length > 0;
+    }
+
+    // Staff summary
+    const staffCountRows = await query(
+      `SELECT 
+         SUM(CASE WHEN status = 'current' THEN 1 ELSE 0 END) as current_count,
+         SUM(CASE WHEN status = 'previous' THEN 1 ELSE 0 END) as previous_count
+       FROM school_staff WHERE school_id = ?`,
+      [schoolId]
+    );
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        school,
+        activeJobs,
+        stats: {
+          followersCount: followerRows[0]?.count || 0,
+          currentStaffCount: staffCountRows[0]?.current_count || 0,
+          previousStaffCount: staffCountRows[0]?.previous_count || 0,
+          activeJobsCount: activeJobs.length
+        },
+        isFollowing
+      }
+    });
+  } catch (err) {
+    console.error('getPublicSchoolProfile Error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to retrieve school profile.' });
+  }
+};
+
+// GET /api/v1/school/:id/staff
+const getSchoolStaff = async (req, res) => {
+  try {
+    const schoolId = parseInt(req.params.id, 10);
+
+    const staffRows = await query(
+      `SELECT 
+         ss.id,
+         ss.school_id,
+         ss.teacher_id,
+         ss.status,
+         ss.category,
+         ss.designation,
+         ss.subject,
+         ss.from_year,
+         ss.to_year,
+         ss.is_verified_by_school,
+         tp.full_name,
+         tp.avatar_url,
+         tp.highest_qualification,
+         tp.experience_years,
+         tp.primary_subject,
+         tp.current_city,
+         tp.current_state
+       FROM school_staff ss
+       JOIN teacher_profiles tp ON ss.teacher_id = tp.id
+       WHERE ss.school_id = ?
+       ORDER BY 
+         CASE WHEN ss.category = 'Leadership' THEN 1
+              WHEN ss.category = 'Teaching Staff' THEN 2
+              WHEN ss.category = 'Sports & Arts' THEN 3
+              ELSE 4 END,
+         ss.from_year DESC`,
+      [schoolId]
+    );
+
+    const currentStaff = staffRows.filter((s) => s.status === 'current');
+    const previousStaff = staffRows.filter((s) => s.status === 'previous');
+
+    // Group current staff by category
+    const categories = ['Leadership', 'Teaching Staff', 'Sports & Arts', 'Non-Teaching Staff'];
+    const currentByCategory = {};
+    for (const cat of categories) {
+      currentByCategory[cat] = currentStaff.filter((s) => s.category === cat);
+    }
+    const otherStaff = currentStaff.filter((s) => !categories.includes(s.category));
+    if (otherStaff.length > 0) {
+      currentByCategory['Other Staff'] = otherStaff;
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        currentStaff,
+        currentByCategory,
+        previousStaff,
+        totalCurrent: currentStaff.length,
+        totalPrevious: previousStaff.length
+      }
+    });
+  } catch (err) {
+    console.error('getSchoolStaff Error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to retrieve school staff.' });
+  }
+};
+
 module.exports = {
   getProfile,
   updateProfile,
@@ -458,5 +657,9 @@ module.exports = {
   updateJob,
   getJobApplicants,
   updateApplicationStatus,
-  getSchoolDashboard
+  getSchoolDashboard,
+  searchSchools,
+  getPublicSchoolProfile,
+  getSchoolStaff
 };
+

@@ -161,7 +161,81 @@ const updateProfile = async (req, res) => {
       }
     }
 
+    // Auto-link teacher to school_staff for registered schools
     const row = updated[0];
+    const teacherId = row.id;
+    const teacherCategory = row.post_type || 'Teaching Staff';
+    const teacherDesignation = row.designation || 'Educator';
+    const teacherSubject = row.primary_subject || 'General';
+
+    const parseHelper = (val) => {
+      if (!val) return null;
+      if (typeof val === 'object') return val;
+      try { return JSON.parse(val); } catch { return null; }
+    };
+
+    // 1. Current Job sync
+    const parsedCurrentJob = parseHelper(currentJobData);
+    if (parsedCurrentJob && parsedCurrentJob.isWorkingNow) {
+      let matchedSchoolId = parsedCurrentJob.schoolId || null;
+      if (!matchedSchoolId && parsedCurrentJob.schoolName) {
+        const matches = await query(
+          'SELECT id FROM school_profiles WHERE LOWER(TRIM(school_name)) = LOWER(TRIM(?)) LIMIT 1',
+          [parsedCurrentJob.schoolName]
+        );
+        if (matches.length > 0) matchedSchoolId = matches[0].id;
+      }
+      if (matchedSchoolId) {
+        await query(
+          `INSERT INTO school_staff (school_id, teacher_id, status, category, designation, subject, from_year)
+           VALUES (?, ?, 'current', ?, ?, ?, ?)
+           ON DUPLICATE KEY UPDATE status = 'current', designation = VALUES(designation), subject = VALUES(subject), from_year = VALUES(from_year)`,
+          [
+            matchedSchoolId,
+            teacherId,
+            teacherCategory,
+            parsedCurrentJob.designation || teacherDesignation,
+            parsedCurrentJob.subject || teacherSubject,
+            parsedCurrentJob.joiningDate || parsedCurrentJob.joinedYear || 'Current'
+          ]
+        ).catch((e) => console.warn('School staff current sync notice:', e.message));
+      }
+    }
+
+    // 2. Previous Jobs sync
+    const parsedPrevJobs = Array.isArray(previousJobsData) ? previousJobsData : parseHelper(previousJobsData);
+    if (Array.isArray(parsedPrevJobs)) {
+      for (const pj of parsedPrevJobs) {
+        if (!pj || !pj.schoolName) continue;
+        let matchedSchoolId = pj.schoolId || null;
+        if (!matchedSchoolId) {
+          const matches = await query(
+            'SELECT id FROM school_profiles WHERE LOWER(TRIM(school_name)) = LOWER(TRIM(?)) LIMIT 1',
+            [pj.schoolName]
+          );
+          if (matches.length > 0) matchedSchoolId = matches[0].id;
+        }
+        if (matchedSchoolId) {
+          const tenureFrom = pj.fromYear || pj.startDate || '';
+          const tenureTo = pj.toYear || pj.endDate || '';
+          await query(
+            `INSERT INTO school_staff (school_id, teacher_id, status, category, designation, subject, from_year, to_year)
+             VALUES (?, ?, 'previous', ?, ?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE status = 'previous', designation = VALUES(designation), subject = VALUES(subject), to_year = VALUES(to_year)`,
+            [
+              matchedSchoolId,
+              teacherId,
+              teacherCategory,
+              pj.designation || teacherDesignation,
+              pj.subject || teacherSubject,
+              tenureFrom,
+              tenureTo
+            ]
+          ).catch((e) => console.warn('School staff prev sync notice:', e.message));
+        }
+      }
+    }
+
     const safeParse = (val) => {
       if (!val) return null;
       if (typeof val === 'object') return val;
@@ -530,6 +604,148 @@ const getQualificationSuggestions = async (req, res) => {
   }
 };
 
+// GET /api/v1/teacher/network-jobs
+const getNetworkJobs = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const teacherRows = await query('SELECT * FROM teacher_profiles WHERE user_id = ?', [userId]);
+    if (teacherRows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Teacher profile not found.' });
+    }
+    const teacher = teacherRows[0];
+
+    const teacherCity = teacher.current_city || '';
+    const teacherState = teacher.current_state || '';
+    const teacherSubject = teacher.primary_subject || '';
+
+    // 1. Followed schools' jobs
+    const followedJobs = await query(
+      `SELECT 
+         j.id, j.title, j.designation, j.subject, j.salary_min, j.salary_max, j.job_type, j.openings,
+         j.city, j.state, j.created_at,
+         s.id AS school_id, s.school_name, s.logo_url AS school_logo, s.board, s.is_verified,
+         1 AS is_followed
+       FROM jobs j
+       JOIN school_profiles s ON j.school_id = s.id
+       JOIN follows f ON (f.target_type = 'school' AND f.target_id = s.id AND f.follower_user_id = ?)
+       WHERE j.status = 'active'
+       ORDER BY j.created_at DESC
+       LIMIT 30`,
+      [userId]
+    );
+
+    // 2. Nearby jobs (matching city or state)
+    const nearbyJobs = await query(
+      `SELECT 
+         j.id, j.title, j.designation, j.subject, j.salary_min, j.salary_max, j.job_type, j.openings,
+         j.city, j.state, j.created_at,
+         s.id AS school_id, s.school_name, s.logo_url AS school_logo, s.board, s.is_verified,
+         CASE WHEN EXISTS (
+           SELECT 1 FROM follows f WHERE f.target_type = 'school' AND f.target_id = s.id AND f.follower_user_id = ?
+         ) THEN 1 ELSE 0 END AS is_followed
+       FROM jobs j
+       JOIN school_profiles s ON j.school_id = s.id
+       WHERE j.status = 'active' AND (j.city = ? OR j.state = ?)
+       ORDER BY CASE WHEN j.city = ? THEN 1 ELSE 2 END, j.created_at DESC
+       LIMIT 30`,
+      [userId, teacherCity, teacherState, teacherCity]
+    );
+
+    // 3. Recommended jobs (matching subject or designation)
+    const recommendedJobs = await query(
+      `SELECT 
+         j.id, j.title, j.designation, j.subject, j.salary_min, j.salary_max, j.job_type, j.openings,
+         j.city, j.state, j.created_at,
+         s.id AS school_id, s.school_name, s.logo_url AS school_logo, s.board, s.is_verified,
+         CASE WHEN EXISTS (
+           SELECT 1 FROM follows f WHERE f.target_type = 'school' AND f.target_id = s.id AND f.follower_user_id = ?
+         ) THEN 1 ELSE 0 END AS is_followed
+       FROM jobs j
+       JOIN school_profiles s ON j.school_id = s.id
+       WHERE j.status = 'active' AND (j.subject LIKE ? OR j.designation LIKE ?)
+       ORDER BY j.created_at DESC
+       LIMIT 30`,
+      [userId, `%${teacherSubject}%`, `%${teacher.designation || ''}%`]
+    );
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        followedJobs,
+        nearbyJobs,
+        recommendedJobs,
+        teacherLocation: { city: teacherCity, state: teacherState }
+      }
+    });
+  } catch (error) {
+    console.error('getNetworkJobs Error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to retrieve jobs.'
+    });
+  }
+};
+
+// GET /api/v1/teacher/public/:id
+const getPublicTeacherProfile = async (req, res) => {
+  try {
+    const teacherId = parseInt(req.params.id, 10);
+    const rows = await query('SELECT * FROM teacher_profiles WHERE id = ?', [teacherId]);
+    if (rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Teacher profile not found.' });
+    }
+    const t = rows[0];
+
+    const safeParse = (val) => {
+      if (!val) return null;
+      if (typeof val === 'object') return val;
+      try { return JSON.parse(val); } catch (e) { return null; }
+    };
+
+    let isFollowing = false;
+    if (req.user?.id) {
+      const followCheck = await query(
+        'SELECT id FROM follows WHERE follower_user_id = ? AND target_type = "teacher" AND target_id = ?',
+        [req.user.id, teacherId]
+      );
+      isFollowing = followCheck.length > 0;
+    }
+
+    const followerRows = await query(
+      'SELECT COUNT(*) as count FROM follows WHERE target_type = "teacher" AND target_id = ?',
+      [teacherId]
+    );
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        id: t.id,
+        fullName: t.full_name,
+        avatarUrl: t.avatar_url,
+        postType: t.post_type,
+        designation: t.designation,
+        primarySubject: t.primary_subject,
+        secondarySubjects: t.secondary_subjects,
+        highestQualification: t.highest_qualification,
+        specialization: t.specialization,
+        experienceYears: t.experience_years,
+        currentCity: t.current_city,
+        currentState: t.current_state,
+        bio: t.bio,
+        qualificationsData: safeParse(t.qualifications_data),
+        previousJobsData: safeParse(t.previous_jobs_data),
+        currentJobData: safeParse(t.current_job_data),
+        isProfileCompleted: !!t.is_profile_completed,
+        isFollowing,
+        followerCount: followerRows[0]?.count || 0
+      }
+    });
+  } catch (error) {
+    console.error('getPublicTeacherProfile Error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to retrieve teacher profile.' });
+  }
+};
+
 module.exports = {
   getProfile,
   updateProfile,
@@ -540,5 +756,8 @@ module.exports = {
   toggleSaveJob,
   getSavedJobs,
   getTeacherDashboard,
-  getQualificationSuggestions
+  getQualificationSuggestions,
+  getNetworkJobs,
+  getPublicTeacherProfile
 };
+

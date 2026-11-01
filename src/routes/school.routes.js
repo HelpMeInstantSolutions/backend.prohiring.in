@@ -5,10 +5,25 @@ const { authenticate } = require('../middlewares/auth.middleware');
 const { authorize } = require('../middlewares/role.middleware');
 const { upload } = require('../middlewares/upload.middleware');
 
-// All routes require school role
+// Helper for optional auth
+const optionalAuth = (req, res, next) => {
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    return authenticate(req, res, next);
+  }
+  next();
+};
+
+// Public school discovery endpoints
+router.get('/search', schoolController.searchSchools);
+router.get('/public/:id', optionalAuth, schoolController.getPublicSchoolProfile);
+router.get('/:id/staff', schoolController.getSchoolStaff);
+
+// All routes below require school role
 router.use(authenticate, authorize('school'));
 
 router.get('/profile', schoolController.getProfile);
+
 router.put('/profile', schoolController.updateProfile);
 router.post('/upload-logo', upload.single('logo'), schoolController.uploadLogo);
 router.get('/dashboard', schoolController.getSchoolDashboard);

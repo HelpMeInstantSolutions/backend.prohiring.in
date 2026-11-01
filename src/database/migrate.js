@@ -66,6 +66,33 @@ async function runMigration() {
       }
     }
 
+    const schoolColumnsToEnsure = [
+      ['established_year', 'INT DEFAULT NULL'],
+      ['institution_type', 'VARCHAR(100) DEFAULT \'K-12 School\''],
+      ['facilities', 'TEXT DEFAULT NULL'],
+      ['student_count', 'VARCHAR(50) DEFAULT NULL'],
+      ['faculty_count', 'VARCHAR(50) DEFAULT NULL'],
+      ['social_links', 'TEXT DEFAULT NULL'],
+      ['campus_photos', 'TEXT DEFAULT NULL']
+    ];
+
+    for (const [colName, colDef] of schoolColumnsToEnsure) {
+      try {
+        const [existing] = await connection.query(
+          `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS 
+           WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'school_profiles' AND COLUMN_NAME = ?`,
+          [colName]
+        );
+        if (existing.length === 0) {
+          console.log(`Adding column '${colName}' to school_profiles...`);
+          await connection.query(`ALTER TABLE \`school_profiles\` ADD COLUMN \`${colName}\` ${colDef};`);
+        }
+      } catch (err) {
+        console.warn(`Could not check or add column ${colName} to school_profiles:`, err.message);
+      }
+    }
+
+
     console.log('Migration completed successfully!');
   } catch (error) {
     console.error('Migration failed:', error);

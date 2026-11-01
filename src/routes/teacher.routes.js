@@ -5,7 +5,19 @@ const { authenticate } = require('../middlewares/auth.middleware');
 const { authorize } = require('../middlewares/role.middleware');
 const { upload } = require('../middlewares/upload.middleware');
 
-// All routes require teacher role
+// Helper for optional auth
+const optionalAuth = (req, res, next) => {
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    return authenticate(req, res, next);
+  }
+  next();
+};
+
+// Public teacher profile
+router.get('/public/:id', optionalAuth, teacherController.getPublicTeacherProfile);
+
+// All routes below require teacher role
 router.use(authenticate, authorize('teacher'));
 
 router.get('/profile', teacherController.getProfile);
@@ -17,6 +29,8 @@ router.get('/applications', teacherController.getMyApplications);
 router.post('/save-job/:jobId', teacherController.toggleSaveJob);
 router.get('/saved-jobs', teacherController.getSavedJobs);
 router.get('/dashboard', teacherController.getTeacherDashboard);
+router.get('/network-jobs', teacherController.getNetworkJobs);
 router.get('/qualification-suggestions', teacherController.getQualificationSuggestions);
 
 module.exports = router;
+

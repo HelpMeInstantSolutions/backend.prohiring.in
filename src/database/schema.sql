@@ -169,3 +169,79 @@ CREATE TABLE IF NOT EXISTS `otps` (
   INDEX idx_phone (`phone`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- 10. School Staff Directory (Auto-linked from Teacher Employment History)
+CREATE TABLE IF NOT EXISTS `school_staff` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `school_id` INT NOT NULL,
+  `teacher_id` INT NOT NULL,
+  `status` ENUM('current', 'previous') NOT NULL DEFAULT 'current',
+  `category` VARCHAR(100) DEFAULT 'Teaching Staff',
+  `designation` VARCHAR(150) DEFAULT NULL,
+  `subject` VARCHAR(150) DEFAULT NULL,
+  `from_year` VARCHAR(20) DEFAULT NULL,
+  `to_year` VARCHAR(20) DEFAULT NULL,
+  `is_verified_by_school` BOOLEAN DEFAULT 0,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY `uniq_school_teacher_role` (`school_id`, `teacher_id`, `status`, `designation`),
+  INDEX `idx_school_status` (`school_id`, `status`),
+  FOREIGN KEY (`school_id`) REFERENCES `school_profiles` (`id`) ON DELETE CASCADE,
+  FOREIGN KEY (`teacher_id`) REFERENCES `teacher_profiles` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 11. Social Follow Graph (Teachers follow schools & teachers; Schools follow educators)
+CREATE TABLE IF NOT EXISTS `follows` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `follower_user_id` INT NOT NULL,
+  `follower_role` ENUM('teacher', 'school') NOT NULL,
+  `target_type` ENUM('teacher', 'school') NOT NULL,
+  `target_id` INT NOT NULL,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY `uniq_follow` (`follower_user_id`, `target_type`, `target_id`),
+  INDEX `idx_follower` (`follower_user_id`),
+  INDEX `idx_target` (`target_type`, `target_id`),
+  FOREIGN KEY (`follower_user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 12. Community Feed Posts
+CREATE TABLE IF NOT EXISTS `community_posts` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `author_user_id` INT NOT NULL,
+  `author_role` ENUM('teacher', 'school') NOT NULL,
+  `content` TEXT NOT NULL,
+  `post_type` ENUM('general', 'hiring_alert', 'achievement', 'pedagogy_tip', 'event') DEFAULT 'general',
+  `media_url` VARCHAR(255) DEFAULT NULL,
+  `likes_count` INT DEFAULT 0,
+  `comments_count` INT DEFAULT 0,
+  `status` ENUM('published', 'archived', 'flagged') DEFAULT 'published',
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX `idx_post_created` (`created_at` DESC),
+  INDEX `idx_post_author` (`author_user_id`),
+  FOREIGN KEY (`author_user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 13. Post Likes
+CREATE TABLE IF NOT EXISTS `post_likes` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `post_id` INT NOT NULL,
+  `user_id` INT NOT NULL,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY `uniq_post_user_like` (`post_id`, `user_id`),
+  FOREIGN KEY (`post_id`) REFERENCES `community_posts` (`id`) ON DELETE CASCADE,
+  FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 14. Post Comments
+CREATE TABLE IF NOT EXISTS `post_comments` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `post_id` INT NOT NULL,
+  `user_id` INT NOT NULL,
+  `comment` TEXT NOT NULL,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  INDEX `idx_post_comments` (`post_id`, `created_at` ASC),
+  FOREIGN KEY (`post_id`) REFERENCES `community_posts` (`id`) ON DELETE CASCADE,
+  FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
