@@ -161,10 +161,24 @@ const updateProfile = async (req, res) => {
       }
     }
 
+    const row = updated[0];
+    const safeParse = (val) => {
+      if (!val) return null;
+      if (typeof val === 'object') return val;
+      try { return JSON.parse(val); } catch (e) { return null; }
+    };
+
     return res.status(200).json({
       success: true,
       message: 'Profile updated successfully.',
-      data: updated[0]
+      data: {
+        ...row,
+        family_details: safeParse(row.family_details),
+        qualifications_data: safeParse(row.qualifications_data),
+        previous_jobs_data: safeParse(row.previous_jobs_data),
+        current_job_data: safeParse(row.current_job_data),
+        tet_details: safeParse(row.tet_details)
+      }
     });
   } catch (error) {
     console.error('updateProfile Error:', error);
