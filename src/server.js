@@ -570,19 +570,34 @@ async function autoMigrateColumns() {
     // Ensure system_settings supports larger payloads (MEDIUMTEXT) and logo/favicon are public
     try {
       await pool.query('ALTER TABLE `system_settings` MODIFY COLUMN `setting_value` MEDIUMTEXT');
+    } catch (e) {
+      console.warn('[Auto-Migrate] setting_value alter warning:', e.message);
+    }
+
+    try {
+      const [colRows] = await pool.query(
+        `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS 
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'system_settings' AND COLUMN_NAME = 'is_public'`
+      );
+      if (colRows.length === 0) {
+        console.log('[Auto-Migrate] Adding column is_public to system_settings...');
+        await pool.query('ALTER TABLE `system_settings` ADD COLUMN `is_public` BOOLEAN DEFAULT 1');
+      }
       await pool.query(`
         UPDATE \`system_settings\` 
         SET \`is_public\` = 1 
         WHERE \`setting_key\` IN ('logo_url', 'favicon_url', 'app_name', 'app_tagline', 'brand_domain', 'primary_color', 'secondary_color', 'support_email', 'support_phone', 'whatsapp_enabled', 'whatsapp_number', 'whatsapp_message', 'whatsapp_position')
       `);
-      // Ensure local upload logos folder
+    } catch (sErr) {
+      console.warn('[Auto-Migrate] System settings alter warning:', sErr.message);
+    }
+
+    try {
       const logosDir = path.join(__dirname, '../uploads/logos');
       if (!fs.existsSync(logosDir)) {
         fs.mkdirSync(logosDir, { recursive: true });
       }
-    } catch (sErr) {
-      console.warn('[Auto-Migrate] System settings alter warning:', sErr.message);
-    }
+    } catch (dErr) {}
 
     console.log('[Auto-Migrate] Teacher profile columns, suggestions, system_settings, and posts/designations taxonomy verified.');
   } catch (err) {

@@ -44,20 +44,24 @@ const uploadFile = async (req, res) => {
     let filename;
     let mimeType;
 
+    const rawBase64 = req.body?.base64 || req.body?.bufferBase64 || req.body?.image;
+
     if (req.file) {
       fileBuffer = req.file.buffer || fs.readFileSync(req.file.path);
       filename = req.file.filename || `${subfolder}-${Date.now()}-${Math.round(Math.random() * 1e6)}${path.extname(req.file.originalname)}`;
       mimeType = req.file.mimetype;
-    } else if (req.body.base64 || req.body.bufferBase64) {
-      const rawBase64 = req.body.base64 || req.body.bufferBase64;
-      const matches = String(rawBase64).match(/^data:([A-Za-z0-9\/+.-]+);base64,(.+)$/);
-      if (matches && matches.length === 3) {
-        mimeType = matches[1];
-        fileBuffer = Buffer.from(matches[2], 'base64');
-      } else {
-        fileBuffer = Buffer.from(rawBase64, 'base64');
-        mimeType = req.body.mimeType || 'image/png';
+    } else if (rawBase64 && typeof rawBase64 === 'string') {
+      const commaIdx = rawBase64.indexOf(',');
+      let base64Content = rawBase64;
+      if (commaIdx !== -1) {
+        const header = rawBase64.substring(0, commaIdx);
+        const mimeMatch = header.match(/data:([^;]+)/);
+        if (mimeMatch) mimeType = mimeMatch[1];
+        base64Content = rawBase64.substring(commaIdx + 1);
       }
+      base64Content = base64Content.replace(/\s/g, '');
+      fileBuffer = Buffer.from(base64Content, 'base64');
+      if (!mimeType) mimeType = req.body.mimeType || 'image/png';
       const ext = mimeType.includes('png') ? '.png' : (mimeType.includes('webp') ? '.webp' : (mimeType.includes('svg') ? '.svg' : (mimeType.includes('ico') ? '.ico' : '.jpg')));
       filename = req.body.filename || `${subfolder}-${Date.now()}-${Math.round(Math.random() * 1e6)}${ext}`;
     } else {

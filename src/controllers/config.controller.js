@@ -4,17 +4,20 @@ const webdavService = require('../services/webdav.service');
 // Helper to auto-convert base64 logo or favicon into aaPanel local disk files
 async function processSettingValue(key, value) {
   if (!value || typeof value !== 'string') return value;
-  if ((key === 'logo_url' || key === 'favicon_url') && value.startsWith('data:image/')) {
+  if ((key === 'logo_url' || key === 'favicon_url') && value.startsWith('data:')) {
     try {
-      const matches = value.match(/^data:([A-Za-z0-9\/+.-]+);base64,(.+)$/);
-      if (matches && matches.length === 3) {
-        const mimeType = matches[1];
-        const buffer = Buffer.from(matches[2], 'base64');
+      const commaIdx = value.indexOf(',');
+      if (commaIdx !== -1) {
+        const header = value.substring(0, commaIdx);
+        const mimeMatch = header.match(/data:([^;]+)/);
+        const mimeType = mimeMatch ? mimeMatch[1] : 'image/png';
+        const base64Content = value.substring(commaIdx + 1).replace(/\s/g, '');
+        const buffer = Buffer.from(base64Content, 'base64');
         const ext = mimeType.includes('png') ? '.png' : (mimeType.includes('webp') ? '.webp' : (mimeType.includes('svg') ? '.svg' : (mimeType.includes('ico') ? '.ico' : '.jpg')));
         const prefix = key === 'logo_url' ? 'logo' : 'favicon';
         const filename = `${prefix}-${Date.now()}${ext}`;
         const relativeUrl = await webdavService.uploadFile('logos', filename, buffer, mimeType);
-        console.log(`[config.controller] Successfully auto-converted ${key} base64 into ${relativeUrl}`);
+        console.log(`[config.controller] Successfully auto-converted ${key} base64 into local storage ${relativeUrl}`);
         return relativeUrl;
       }
     } catch (err) {
@@ -28,9 +31,17 @@ async function processSettingValue(key, value) {
 // Returns dynamic platform settings so Android app and Next.js frontends can adapt branding
 const getPublicSettings = async (req, res) => {
   try {
-    const rows = await query(
-      'SELECT setting_key, setting_value, category FROM system_settings WHERE is_public = 1'
-    );
+    let rows;
+    try {
+      rows = await query(
+        'SELECT setting_key, setting_value, category FROM system_settings WHERE is_public = 1'
+      );
+    } catch (colErr) {
+      // Fallback if is_public column does not exist yet in table
+      rows = await query(
+        'SELECT setting_key, setting_value, category FROM system_settings'
+      );
+    }
 
     const settings = {};
     rows.forEach(r => {
@@ -98,27 +109,40 @@ const updateSettings = async (req, res) => {
       });
     }
 
-    if (Array.isArray(settings)) {
-      for (const item of settings) {
-        if (item.key && item.value !== undefined) {
-          const finalVal = await processSettingValue(item.key, item.value);
+    // Check if is_public column exists in system_settings
+    let hasIsPublic = false;
+    try {
+      const colCheck = await query(
+        `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS 
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'system_settings' AND COLUMN_NAME = 'is_public'`
+      );
+      hasIsPublic = colCheck.length > 0;
+    } catch (e) {
+      hasIsPublic = false;
+    }
+
+    const entries = Array.isArray(settings) 
+      ? settings.map(item => [item.key, item.value])
+      : Object.entries(settings);
+
+    for (const [key, value] of entries) {
+      if (key && value !== undefined) {
+        const finalVal = await processSettingValue(key, value);
+        if (hasIsPublic) {
           await query(
             `INSERT INTO system_settings (setting_key, setting_value, is_public)
              VALUES (?, ?, 1)
-             ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value), is_public = 1`,
-            [item.key, String(finalVal)]
+             ON DUPLICATE KEY UPDATE setting_value = ?, is_public = 1`,
+            [key, String(finalVal), String(finalVal)]
+          );
+        } else {
+          await query(
+            `INSERT INTO system_settings (setting_key, setting_value)
+             VALUES (?, ?)
+             ON DUPLICATE KEY UPDATE setting_value = ?`,
+            [key, String(finalVal), String(finalVal)]
           );
         }
-      }
-    } else if (typeof settings === 'object') {
-      for (const [key, value] of Object.entries(settings)) {
-        const finalVal = await processSettingValue(key, value);
-        await query(
-          `INSERT INTO system_settings (setting_key, setting_value, is_public)
-           VALUES (?, ?, 1)
-           ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value), is_public = 1`,
-          [key, String(finalVal)]
-        );
       }
     }
 
@@ -130,7 +154,7 @@ const updateSettings = async (req, res) => {
     console.error('updateSettings Error:', error);
     return res.status(500).json({
       success: false,
-      message: 'Failed to update platform settings.'
+      message: error.message || 'Failed to update platform settings.'
     });
   }
 };
