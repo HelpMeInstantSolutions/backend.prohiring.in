@@ -53,4 +53,13 @@ router.put('/settings', configController.updateSettings);
 router.post('/settings/test-mail', configController.testMail);
 router.post('/settings/test-sms', configController.testSms);
 
+// Community Posts Moderation
+router.get('/posts', adminController.getCommunityPosts);
+router.delete('/posts/:id', adminController.deleteCommunityPost);
+
+// Storage & WebDAV File Manager
+router.get('/storage/stats', adminController.getStorageStats);
+router.get('/storage/files', adminController.getStorageFiles);
+router.delete('/storage/files', adminController.deleteStorageFile);
+
 module.exports = router;

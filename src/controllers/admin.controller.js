@@ -1,6 +1,7 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { query } = require('../config/database');
+const webdavService = require('../services/webdav.service');
 
 const generateToken = (user) => {
   const secret = process.env.JWT_SECRET || 'prohiring_super_secure_jwt_secret_key_2026_change_in_production';
@@ -966,6 +967,150 @@ const deleteSubject = async (req, res) => {
   }
 };
 
+// GET /api/v1/admin/posts - List community posts with author metadata
+const getCommunityPosts = async (req, res) => {
+  try {
+    const { role, search, page = 1, limit = 20 } = req.query;
+    const offset = (parseInt(page, 10) - 1) * parseInt(limit, 10);
+
+    const conditions = ['1=1'];
+    const params = [];
+
+    if (role && role !== 'all') {
+      conditions.push('cp.author_role = ?');
+      params.push(role);
+    }
+
+    if (search) {
+      conditions.push('(cp.content LIKE ? OR sp.school_name LIKE ? OR tp.full_name LIKE ?)');
+      const term = `%${search.trim()}%`;
+      params.push(term, term, term);
+    }
+
+    const whereClause = conditions.join(' AND ');
+
+    const countRes = await query(
+      `SELECT COUNT(*) as total 
+       FROM community_posts cp
+       LEFT JOIN school_profiles sp ON (cp.author_role = 'school' AND cp.author_user_id = sp.user_id)
+       LEFT JOIN teacher_profiles tp ON (cp.author_role = 'teacher' AND cp.author_user_id = tp.user_id)
+       WHERE ${whereClause}`,
+      params
+    );
+    const total = countRes[0]?.total || 0;
+
+    const postsSql = `
+      SELECT 
+        cp.*,
+        u.email as author_email,
+        u.status as author_account_status,
+        CASE 
+          WHEN cp.author_role = 'school' THEN COALESCE(sp.school_name, 'School Institution')
+          ELSE COALESCE(tp.full_name, 'Teacher Educator')
+        END as author_name,
+        CASE 
+          WHEN cp.author_role = 'school' THEN sp.logo_url
+          ELSE tp.avatar_url
+        END as author_avatar,
+        CASE 
+          WHEN cp.author_role = 'school' THEN sp.city
+          ELSE tp.current_city
+        END as author_city
+      FROM community_posts cp
+      JOIN users u ON cp.author_user_id = u.id
+      LEFT JOIN school_profiles sp ON (cp.author_role = 'school' AND cp.author_user_id = sp.user_id)
+      LEFT JOIN teacher_profiles tp ON (cp.author_role = 'teacher' AND cp.author_user_id = tp.user_id)
+      WHERE ${whereClause}
+      ORDER BY cp.created_at DESC
+      LIMIT ? OFFSET ?
+    `;
+
+    const posts = await query(postsSql, [...params, parseInt(limit, 10), parseInt(offset, 10)]);
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        total,
+        page: parseInt(page, 10),
+        limit: parseInt(limit, 10),
+        totalPages: Math.ceil(total / parseInt(limit, 10)),
+        posts
+      }
+    });
+  } catch (error) {
+    console.error('getCommunityPosts Error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to retrieve community posts: ' + error.message });
+  }
+};
+
+// DELETE /api/v1/admin/posts/:id
+const deleteCommunityPost = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const postRows = await query('SELECT media_url FROM community_posts WHERE id = ?', [id]);
+    if (postRows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Post not found.' });
+    }
+
+    const mediaUrl = postRows[0]?.media_url;
+    if (mediaUrl) {
+      webdavService.deleteByUrl(mediaUrl).catch(() => {});
+    }
+
+    // Delete post comments and likes
+    await query('DELETE FROM community_post_comments WHERE post_id = ?', [id]).catch(() => {});
+    await query('DELETE FROM community_post_likes WHERE post_id = ?', [id]).catch(() => {});
+    await query('DELETE FROM community_posts WHERE id = ?', [id]);
+
+    return res.status(200).json({ success: true, message: 'Community post removed successfully.' });
+  } catch (error) {
+    console.error('deleteCommunityPost Error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to delete community post.' });
+  }
+};
+
+// GET /api/v1/admin/storage/stats
+const getStorageStats = async (req, res) => {
+  try {
+    const stats = await webdavService.getStorageStats();
+    return res.status(200).json({ success: true, data: stats });
+  } catch (error) {
+    console.error('getStorageStats Error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to load storage statistics.' });
+  }
+};
+
+// GET /api/v1/admin/storage/files
+const getStorageFiles = async (req, res) => {
+  try {
+    const { subfolder } = req.query;
+    const files = await webdavService.listFiles(subfolder || null);
+    return res.status(200).json({ success: true, data: { files, total: files.length } });
+  } catch (error) {
+    console.error('getStorageFiles Error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to list storage files.' });
+  }
+};
+
+// DELETE /api/v1/admin/storage/files
+const deleteStorageFile = async (req, res) => {
+  try {
+    const { subfolder, filename, url } = req.body;
+    let deleted = false;
+    if (url) {
+      deleted = await webdavService.deleteByUrl(url);
+    } else if (subfolder && filename) {
+      deleted = await webdavService.deleteFile(subfolder, filename);
+    } else {
+      return res.status(400).json({ success: false, message: 'Specify either file url or subfolder and filename.' });
+    }
+    return res.status(200).json({ success: true, message: deleted ? 'File deleted successfully.' : 'File could not be removed.' });
+  } catch (error) {
+    console.error('deleteStorageFile Error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to delete storage file.' });
+  }
+};
+
 module.exports = {
   getDashboardStats,
   getSchools,
@@ -989,5 +1134,10 @@ module.exports = {
   deleteDesignation,
   createSubject,
   updateSubject,
-  deleteSubject
+  deleteSubject,
+  getCommunityPosts,
+  deleteCommunityPost,
+  getStorageStats,
+  getStorageFiles,
+  deleteStorageFile
 };

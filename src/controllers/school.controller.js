@@ -138,9 +138,18 @@ const uploadLogo = async (req, res) => {
       });
     }
 
+    const userId = req.user.id;
+    const existingRows = await query('SELECT logo_url FROM school_profiles WHERE user_id = ?', [userId]);
+    const oldLogoUrl = existingRows[0]?.logo_url;
+
     const buffer = fs.readFileSync(req.file.path);
     const logoUrl = await webdavService.uploadFile('logos', req.file.filename, buffer, req.file.mimetype);
-    await query('UPDATE school_profiles SET logo_url = ? WHERE user_id = ?', [logoUrl, req.user.id]);
+    await query('UPDATE school_profiles SET logo_url = ? WHERE user_id = ?', [logoUrl, userId]);
+
+    // Clean up old logo from disk & WebDAV
+    if (oldLogoUrl && oldLogoUrl !== logoUrl) {
+      webdavService.deleteByUrl(oldLogoUrl).catch((e) => console.warn('Old logo cleanup notice:', e.message));
+    }
 
     return res.status(200).json({
       success: true,
@@ -166,9 +175,18 @@ const uploadBanner = async (req, res) => {
       });
     }
 
+    const userId = req.user.id;
+    const existingRows = await query('SELECT banner_url FROM school_profiles WHERE user_id = ?', [userId]);
+    const oldBannerUrl = existingRows[0]?.banner_url;
+
     const buffer = fs.readFileSync(req.file.path);
     const bannerUrl = await webdavService.uploadFile('schools', req.file.filename, buffer, req.file.mimetype);
-    await query('UPDATE school_profiles SET banner_url = ? WHERE user_id = ?', [bannerUrl, req.user.id]);
+    await query('UPDATE school_profiles SET banner_url = ? WHERE user_id = ?', [bannerUrl, userId]);
+
+    // Clean up old banner from disk & WebDAV
+    if (oldBannerUrl && oldBannerUrl !== bannerUrl) {
+      webdavService.deleteByUrl(oldBannerUrl).catch((e) => console.warn('Old banner cleanup notice:', e.message));
+    }
 
     return res.status(200).json({
       success: true,

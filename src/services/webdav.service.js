@@ -139,6 +139,186 @@ class WebDAVService {
     }
   }
 
+  /**
+   * Delete file from both local cache and remote WebDAV
+   * @param {string} subfolder
+   * @param {string} filename
+   */
+  async deleteFile(subfolder, filename) {
+    if (!subfolder || !filename) return false;
+    // 1. Delete local file
+    try {
+      const localFilePath = path.join(this.localUploadDir, subfolder, filename);
+      if (fs.existsSync(localFilePath)) {
+        fs.unlinkSync(localFilePath);
+      }
+    } catch (e) {
+      console.warn('[WebDAVService] Local delete notice:', e.message);
+    }
+
+    // 2. Delete remote file on Nextcloud WebDAV
+    try {
+      const remoteUrl = `${this.baseUrl}/${subfolder}/${filename}`;
+      const res = await fetch(remoteUrl, {
+        method: 'DELETE',
+        headers: { Authorization: this.authHeader }
+      });
+      return res.ok || res.status === 404;
+    } catch (err) {
+      console.error('[WebDAVService] WebDAV DELETE error:', err.message);
+      return false;
+    }
+  }
+
+  /**
+   * Delete file using relative or full URL
+   * e.g. '/uploads/avatars/avatar-123.jpg'
+   */
+  async deleteByUrl(url) {
+    if (!url || typeof url !== 'string') return false;
+    const match = url.match(/\/uploads\/([^\/]+)\/([^\/?#]+)/i);
+    if (match) {
+      const [, subfolder, filename] = match;
+      return await this.deleteFile(subfolder, filename);
+    }
+    return false;
+  }
+
+  /**
+   * List files in uploads folder
+   * @param {string} [subfolder] - optional filter
+   */
+  async listFiles(subfolder = null) {
+    const folders = subfolder ? [subfolder] : ['avatars', 'resumes', 'logos', 'schools', 'posts'];
+    const files = [];
+
+    for (const f of folders) {
+      const dir = path.join(this.localUploadDir, f);
+      if (fs.existsSync(dir)) {
+        const filenames = fs.readdirSync(dir);
+        for (const fname of filenames) {
+          try {
+            const fpath = path.join(dir, fname);
+            const stats = fs.statSync(fpath);
+            if (stats.isFile()) {
+              files.push({
+                name: fname,
+                subfolder: f,
+                url: `/uploads/${f}/${fname}`,
+                sizeBytes: stats.size,
+                sizeFormatted: this.formatBytes(stats.size),
+                mimeType: this.getMimeType(path.extname(fname).toLowerCase()),
+                modifiedAt: stats.mtime
+              });
+            }
+          } catch (e) {}
+        }
+      }
+    }
+
+    // Sort newest first
+    files.sort((a, b) => new Date(b.modifiedAt) - new Date(a.modifiedAt));
+    return files;
+  }
+
+  /**
+   * Aggregate storage usage across all categories
+   */
+  async getStorageStats() {
+    const folders = ['avatars', 'resumes', 'logos', 'schools', 'posts'];
+    const categories = {};
+    let totalFiles = 0;
+    let totalSizeBytes = 0;
+
+    for (const f of folders) {
+      let count = 0;
+      let sizeBytes = 0;
+      const dir = path.join(this.localUploadDir, f);
+      if (fs.existsSync(dir)) {
+        const filenames = fs.readdirSync(dir);
+        for (const fname of filenames) {
+          try {
+            const fpath = path.join(dir, fname);
+            const stats = fs.statSync(fpath);
+            if (stats.isFile()) {
+              count++;
+              sizeBytes += stats.size;
+            }
+          } catch (e) {}
+        }
+      }
+      categories[f] = {
+        folder: f,
+        count,
+        sizeBytes,
+        sizeFormatted: this.formatBytes(sizeBytes)
+      };
+      totalFiles += count;
+      totalSizeBytes += sizeBytes;
+    }
+
+    // Check remote Nextcloud connectivity & quota
+    let webdavConnected = false;
+    let quotaInfo = null;
+    try {
+      const res = await fetch(this.baseUrl, {
+        method: 'PROPFIND',
+        headers: {
+          Authorization: this.authHeader,
+          Depth: '0',
+          'Content-Type': 'application/xml; charset=utf-8'
+        },
+        body: `<?xml version="1.0" encoding="utf-8" ?>
+<d:propfind xmlns:d="DAV:">
+  <d:prop>
+    <d:quota-used-bytes/>
+    <d:quota-available-bytes/>
+  </d:prop>
+</d:propfind>`
+      });
+      if (res.ok || res.status === 207) {
+        webdavConnected = true;
+        const xml = await res.text();
+        const usedMatch = xml.match(/<d:quota-used-bytes>(\d+)<\/d:quota-used-bytes>/i);
+        const availMatch = xml.match(/<d:quota-available-bytes>(\d+)<\/d:quota-available-bytes>/i);
+        if (usedMatch || availMatch) {
+          const usedBytes = usedMatch ? parseInt(usedMatch[1], 10) : 0;
+          const availBytes = availMatch ? parseInt(availMatch[1], 10) : 0;
+          quotaInfo = {
+            usedBytes,
+            usedFormatted: this.formatBytes(usedBytes),
+            availBytes,
+            availFormatted: this.formatBytes(availBytes),
+            totalBytes: usedBytes + availBytes,
+            totalFormatted: this.formatBytes(usedBytes + availBytes)
+          };
+        }
+      }
+    } catch (e) {
+      console.warn('[WebDAVService] PROPFIND quota check notice:', e.message);
+    }
+
+    return {
+      totalFiles,
+      totalSizeBytes,
+      totalFormatted: this.formatBytes(totalSizeBytes),
+      categories,
+      webdav: {
+        baseUrl: this.baseUrl,
+        connected: webdavConnected,
+        quota: quotaInfo
+      }
+    };
+  }
+
+  formatBytes(bytes) {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  }
+
   getMimeType(ext) {
     const map = {
       '.jpg': 'image/jpeg',

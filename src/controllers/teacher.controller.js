@@ -281,6 +281,10 @@ const uploadAvatar = async (req, res) => {
     const userId = req.user.id;
     let avatarUrl = '';
 
+    // Check existing avatar to delete old file
+    const existingRows = await query('SELECT avatar_url FROM teacher_profiles WHERE user_id = ?', [userId]);
+    const oldAvatarUrl = existingRows[0]?.avatar_url;
+
     if (req.file) {
       const buffer = fs.readFileSync(req.file.path);
       avatarUrl = await webdavService.uploadFile('avatars', req.file.filename, buffer, req.file.mimetype);
@@ -297,6 +301,11 @@ const uploadAvatar = async (req, res) => {
     }
 
     await query('UPDATE teacher_profiles SET avatar_url = ? WHERE user_id = ?', [avatarUrl, userId]);
+
+    // Clean up old avatar from disk & WebDAV
+    if (oldAvatarUrl && oldAvatarUrl !== avatarUrl) {
+      webdavService.deleteByUrl(oldAvatarUrl).catch((e) => console.warn('Old avatar cleanup notice:', e.message));
+    }
 
     return res.status(200).json({
       success: true,
@@ -322,9 +331,18 @@ const uploadResume = async (req, res) => {
       });
     }
 
+    const userId = req.user.id;
+    const existingRows = await query('SELECT resume_url FROM teacher_profiles WHERE user_id = ?', [userId]);
+    const oldResumeUrl = existingRows[0]?.resume_url;
+
     const buffer = fs.readFileSync(req.file.path);
     const resumeUrl = await webdavService.uploadFile('resumes', req.file.filename, buffer, req.file.mimetype);
-    await query('UPDATE teacher_profiles SET resume_url = ? WHERE user_id = ?', [resumeUrl, req.user.id]);
+    await query('UPDATE teacher_profiles SET resume_url = ? WHERE user_id = ?', [resumeUrl, userId]);
+
+    // Clean up old resume from disk & WebDAV
+    if (oldResumeUrl && oldResumeUrl !== resumeUrl) {
+      webdavService.deleteByUrl(oldResumeUrl).catch((e) => console.warn('Old resume cleanup notice:', e.message));
+    }
 
     return res.status(200).json({
       success: true,
