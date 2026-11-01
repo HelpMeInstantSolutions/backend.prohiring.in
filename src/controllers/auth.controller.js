@@ -35,13 +35,39 @@ const sendRegistrationOtp = async (req, res) => {
       });
     }
 
-    // Check existing email
-    const existingEmail = await query('SELECT id FROM users WHERE email = ?', [cleanEmail]);
+    // Check existing email across all users
+    const existingEmail = await query('SELECT id, role FROM users WHERE email = ?', [cleanEmail]);
     if (existingEmail.length > 0) {
       return res.status(409).json({
         success: false,
-        message: 'An account with this email address already exists. Please log in.'
+        message: `An account with this email address already exists (${existingEmail[0].role}). One email can only be used once.`
       });
+    }
+
+    // Check existing phone across teacher_profiles and school_profiles
+    const phone10 = cleanPhone.replace(/[^\d]/g, '').slice(-10);
+    if (phone10.length === 10) {
+      const existingTeacherPhone = await query(
+        'SELECT id FROM teacher_profiles WHERE REPLACE(REPLACE(phone, " ", ""), "+", "") LIKE ?',
+        [`%${phone10}`]
+      );
+      if (existingTeacherPhone.length > 0) {
+        return res.status(409).json({
+          success: false,
+          message: 'This mobile number is already registered to a Teacher account. One phone number can only be used once.'
+        });
+      }
+
+      const existingSchoolPhone = await query(
+        'SELECT id FROM school_profiles WHERE REPLACE(REPLACE(phone, " ", ""), "+", "") LIKE ?',
+        [`%${phone10}`]
+      );
+      if (existingSchoolPhone.length > 0) {
+        return res.status(409).json({
+          success: false,
+          message: 'This mobile number is already registered to an Institution account. One phone number can only be used once.'
+        });
+      }
     }
 
     // Generate 6-digit OTPs
@@ -154,8 +180,29 @@ const registerTeacher = async (req, res) => {
     if (existing.length > 0) {
       return res.status(409).json({
         success: false,
-        message: 'An account with this email address already exists.'
+        message: 'An account with this email address already exists. One email can only be used once.'
       });
+    }
+
+    // Check existing phone across teacher_profiles and school_profiles
+    if (phone) {
+      const phone10 = String(phone).replace(/[^\d]/g, '').slice(-10);
+      if (phone10.length === 10) {
+        const existingTeacherPhone = await query(
+          'SELECT id FROM teacher_profiles WHERE REPLACE(REPLACE(phone, " ", ""), "+", "") LIKE ?',
+          [`%${phone10}`]
+        );
+        const existingSchoolPhone = await query(
+          'SELECT id FROM school_profiles WHERE REPLACE(REPLACE(phone, " ", ""), "+", "") LIKE ?',
+          [`%${phone10}`]
+        );
+        if (existingTeacherPhone.length > 0 || existingSchoolPhone.length > 0) {
+          return res.status(409).json({
+            success: false,
+            message: 'This mobile number is already registered. One phone number can only be used once across Teacher and School accounts.'
+          });
+        }
+      }
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
@@ -241,12 +288,34 @@ const registerSchool = async (req, res) => {
 
     const formattedSchoolPhone = formatIndianPhone(phone);
 
+    // Check existing email
     const existing = await query('SELECT id FROM users WHERE email = ?', [email.toLowerCase().trim()]);
     if (existing.length > 0) {
       return res.status(409).json({
         success: false,
-        message: 'An account with this email address already exists.'
+        message: 'An account with this email address already exists. One email can only be used once.'
       });
+    }
+
+    // Check existing phone across teacher_profiles and school_profiles
+    if (phone) {
+      const phone10 = String(phone).replace(/[^\d]/g, '').slice(-10);
+      if (phone10.length === 10) {
+        const existingTeacherPhone = await query(
+          'SELECT id FROM teacher_profiles WHERE REPLACE(REPLACE(phone, " ", ""), "+", "") LIKE ?',
+          [`%${phone10}`]
+        );
+        const existingSchoolPhone = await query(
+          'SELECT id FROM school_profiles WHERE REPLACE(REPLACE(phone, " ", ""), "+", "") LIKE ?',
+          [`%${phone10}`]
+        );
+        if (existingTeacherPhone.length > 0 || existingSchoolPhone.length > 0) {
+          return res.status(409).json({
+            success: false,
+            message: 'This mobile number is already registered. One phone number can only be used once across Teacher and School accounts.'
+          });
+        }
+      }
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
