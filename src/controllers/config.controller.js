@@ -202,11 +202,44 @@ const getPublicTaxonomy = async (req, res) => {
   }
 };
 
+// GET /api/v1/config/pages/:slug (Public)
+// Returns published custom page content by slug (e.g., privacy, terms)
+const getPageBySlug = async (req, res) => {
+  try {
+    const { slug } = req.params;
+    const cleanSlug = (slug || '').toLowerCase().trim();
+    const pages = await query(
+      'SELECT id, slug, title, subtitle, content, meta_description, updated_at FROM custom_pages WHERE slug = ? AND is_published = 1',
+      [cleanSlug]
+    );
+
+    if (!pages.length) {
+      return res.status(404).json({
+        success: false,
+        message: 'Page not found.'
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: pages[0]
+    });
+  } catch (error) {
+    console.error('getPageBySlug Error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to retrieve page content: ' + error.message
+    });
+  }
+};
+
 module.exports = {
   getPublicSettings,
   getAllSettings,
   updateSettings,
   testMail,
   testSms,
-  getPublicTaxonomy
+  getPublicTaxonomy,
+  getPageBySlug
 };
+

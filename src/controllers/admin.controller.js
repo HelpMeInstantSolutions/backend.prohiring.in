@@ -1225,6 +1225,254 @@ const deleteStorageFile = async (req, res) => {
   }
 };
 
+// PUT /api/v1/admin/change-password - Admin changes their own password and/or email
+const changeAdminPassword = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { currentPassword, newPassword, confirmPassword, email } = req.body;
+
+    if (!newPassword || newPassword.trim().length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: 'New password must be at least 6 characters long.'
+      });
+    }
+
+    if (newPassword !== confirmPassword) {
+      return res.status(400).json({
+        success: false,
+        message: 'New password and confirm password do not match.'
+      });
+    }
+
+    const users = await query('SELECT id, email, password FROM users WHERE id = ?', [userId]);
+    if (!users.length) {
+      return res.status(404).json({ success: false, message: 'User account not found.' });
+    }
+
+    const user = users[0];
+
+    // If current password provided, verify it
+    if (currentPassword) {
+      const isMatch = await bcrypt.compare(currentPassword, user.password);
+      if (!isMatch) {
+        return res.status(400).json({
+          success: false,
+          message: 'Current password does not match. Please verify and try again.'
+        });
+      }
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword.trim(), 10);
+    let cleanEmail = user.email;
+
+    if (email && email.trim() && email.trim().toLowerCase() !== user.email.toLowerCase()) {
+      cleanEmail = email.trim().toLowerCase();
+      const existing = await query('SELECT id FROM users WHERE email = ? AND id != ?', [cleanEmail, userId]);
+      if (existing.length > 0) {
+        return res.status(409).json({
+          success: false,
+          message: 'An account with this email address already exists.'
+        });
+      }
+      await query('UPDATE users SET email = ?, password = ? WHERE id = ?', [cleanEmail, hashedPassword, userId]);
+    } else {
+      await query('UPDATE users SET password = ? WHERE id = ?', [hashedPassword, userId]);
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'Admin account credentials updated successfully.',
+      data: {
+        userId,
+        email: cleanEmail
+      }
+    });
+  } catch (error) {
+    console.error('changeAdminPassword Error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to update admin password: ' + error.message
+    });
+  }
+};
+
+// GET /api/v1/admin/pages - List all custom CMS pages
+const getCustomPages = async (req, res) => {
+  try {
+    const pages = await query(
+      'SELECT id, slug, title, subtitle, is_published, meta_description, created_at, updated_at FROM custom_pages ORDER BY id ASC'
+    );
+    return res.status(200).json({
+      success: true,
+      data: pages
+    });
+  } catch (error) {
+    console.error('getCustomPages Error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to retrieve custom pages: ' + error.message
+    });
+  }
+};
+
+// GET /api/v1/admin/pages/:id - Get single CMS page with full content
+const getCustomPageById = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const pages = await query(
+      'SELECT * FROM custom_pages WHERE id = ? OR slug = ?',
+      [id, id]
+    );
+    if (!pages.length) {
+      return res.status(404).json({ success: false, message: 'Page not found.' });
+    }
+    return res.status(200).json({
+      success: true,
+      data: pages[0]
+    });
+  } catch (error) {
+    console.error('getCustomPageById Error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to retrieve page details: ' + error.message
+    });
+  }
+};
+
+// POST /api/v1/admin/pages - Create new CMS page
+const createCustomPage = async (req, res) => {
+  try {
+    const { slug, title, subtitle, content, is_published = 1, meta_description } = req.body;
+
+    if (!title || !content) {
+      return res.status(400).json({
+        success: false,
+        message: 'Page Title and Page Content are required.'
+      });
+    }
+
+    const cleanSlug = (slug || title)
+      .toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '') || 'page';
+
+    const existing = await query('SELECT id FROM custom_pages WHERE slug = ?', [cleanSlug]);
+    if (existing.length > 0) {
+      return res.status(409).json({
+        success: false,
+        message: `A page with URL slug '${cleanSlug}' already exists.`
+      });
+    }
+
+    const result = await query(
+      `INSERT INTO custom_pages (slug, title, subtitle, content, is_published, meta_description)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [cleanSlug, title.trim(), subtitle ? subtitle.trim() : null, content, is_published ? 1 : 0, meta_description ? meta_description.trim() : null]
+    );
+
+    return res.status(201).json({
+      success: true,
+      message: 'Page created successfully.',
+      data: {
+        id: result.insertId,
+        slug: cleanSlug,
+        title: title.trim()
+      }
+    });
+  } catch (error) {
+    console.error('createCustomPage Error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to create page: ' + error.message
+    });
+  }
+};
+
+// PUT /api/v1/admin/pages/:id - Update existing CMS page
+const updateCustomPage = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { slug, title, subtitle, content, is_published, meta_description } = req.body;
+
+    const existing = await query('SELECT id, slug FROM custom_pages WHERE id = ?', [id]);
+    if (!existing.length) {
+      return res.status(404).json({ success: false, message: 'Page not found.' });
+    }
+
+    let finalSlug = existing[0].slug;
+    if (slug && slug.trim()) {
+      finalSlug = slug.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+      const duplicate = await query('SELECT id FROM custom_pages WHERE slug = ? AND id != ?', [finalSlug, id]);
+      if (duplicate.length > 0) {
+        return res.status(409).json({
+          success: false,
+          message: `A page with URL slug '${finalSlug}' already exists.`
+        });
+      }
+    }
+
+    await query(
+      `UPDATE custom_pages 
+       SET slug = ?, title = ?, subtitle = ?, content = ?, is_published = ?, meta_description = ?
+       WHERE id = ?`,
+      [
+        finalSlug,
+        title ? title.trim() : existing[0].title,
+        subtitle !== undefined ? (subtitle ? subtitle.trim() : null) : existing[0].subtitle,
+        content !== undefined ? content : existing[0].content,
+        is_published !== undefined ? (is_published ? 1 : 0) : existing[0].is_published,
+        meta_description !== undefined ? (meta_description ? meta_description.trim() : null) : existing[0].meta_description,
+        id
+      ]
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: 'Page updated successfully.',
+      data: { id, slug: finalSlug }
+    });
+  } catch (error) {
+    console.error('updateCustomPage Error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to update page: ' + error.message
+    });
+  }
+};
+
+// DELETE /api/v1/admin/pages/:id - Delete CMS page
+const deleteCustomPage = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const existing = await query('SELECT id, slug FROM custom_pages WHERE id = ?', [id]);
+    if (!existing.length) {
+      return res.status(404).json({ success: false, message: 'Page not found.' });
+    }
+
+    // Protect core system pages from accidental total deletion
+    if (['privacy', 'terms'].includes(existing[0].slug)) {
+      return res.status(400).json({
+        success: false,
+        message: `System page '/${existing[0].slug}' is essential for legal compliance and cannot be deleted. You can edit its content instead.`
+      });
+    }
+
+    await query('DELETE FROM custom_pages WHERE id = ?', [id]);
+    return res.status(200).json({
+      success: true,
+      message: 'Page removed successfully.'
+    });
+  } catch (error) {
+    console.error('deleteCustomPage Error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to delete page: ' + error.message
+    });
+  }
+};
+
 module.exports = {
   getDashboardStats,
   getSchools,
@@ -1254,5 +1502,12 @@ module.exports = {
   deleteCommunityPost,
   getStorageStats,
   getStorageFiles,
-  deleteStorageFile
+  deleteStorageFile,
+  changeAdminPassword,
+  getCustomPages,
+  getCustomPageById,
+  createCustomPage,
+  updateCustomPage,
+  deleteCustomPage
 };
+

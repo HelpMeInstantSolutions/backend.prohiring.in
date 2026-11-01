@@ -63,4 +63,15 @@ router.get('/storage/stats', adminController.getStorageStats);
 router.get('/storage/files', adminController.getStorageFiles);
 router.delete('/storage/files', adminController.deleteStorageFile);
 
+// Admin Self-Account Password & Credential Update
+router.put('/change-password', adminController.changeAdminPassword);
+
+// Custom Pages / CMS (Page Creator)
+router.get('/pages', adminController.getCustomPages);
+router.get('/pages/:id', adminController.getCustomPageById);
+router.post('/pages', adminController.createCustomPage);
+router.put('/pages/:id', adminController.updateCustomPage);
+router.delete('/pages/:id', adminController.deleteCustomPage);
+
 module.exports = router;
+
