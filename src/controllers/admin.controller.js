@@ -655,6 +655,8 @@ const impersonateUser = async (req, res) => {
       message: 'Failed to generate impersonation token: ' + error.message
     });
   }
+};
+
 // POST /api/v1/admin/teachers - Admin manually creates a teacher
 const createTeacher = async (req, res) => {
   try {
