@@ -25,6 +25,8 @@ const getPublicSettings = async (req, res) => {
         primaryDark: settings.primary_dark || '#3730A3',
         secondaryColor: settings.secondary_color || '#0EA5A4',
         androidMinVersion: settings.android_min_version || '1.0.0',
+        faviconUrl: settings.favicon_url || '/favicon.ico',
+        logoUrl: settings.logo_url || '',
         all: settings
       }
     });
