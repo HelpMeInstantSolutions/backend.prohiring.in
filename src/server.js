@@ -142,7 +142,8 @@ async function autoMigrateColumns() {
       ['profile_step', 'INT DEFAULT 1'],
       ['latitude', 'DECIMAL(10, 8) DEFAULT NULL'],
       ['longitude', 'DECIMAL(11, 8) DEFAULT NULL'],
-      ['preferred_location', 'TEXT DEFAULT NULL']
+      ['preferred_location', 'TEXT DEFAULT NULL'],
+      ['teaching_levels', 'VARCHAR(255) DEFAULT NULL']
     ];
 
     for (const [colName, colDef] of columnsToEnsure) {

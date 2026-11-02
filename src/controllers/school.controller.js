@@ -437,17 +437,19 @@ const getJobApplicants = async (req, res) => {
         a.applied_at, 
         a.interview_date, 
         a.interview_notes,
-        t.id as teacher_id, 
-        t.full_name, 
-        t.full_name as candidate_name,
-        t.phone, 
-        t.phone as candidate_phone,
+        COALESCE(t.id, a.teacher_id) as teacher_id, 
+        COALESCE(t.full_name, u.email, 'Candidate') as full_name, 
+        COALESCE(t.full_name, u.email, 'Candidate') as candidate_name,
+        COALESCE(t.phone, u.phone, '') as phone, 
+        COALESCE(t.phone, u.phone, '') as candidate_phone,
         t.highest_qualification, 
         t.specialization,
         t.experience_years, 
         t.primary_subject, 
         t.secondary_subjects, 
-        t.teaching_levels,
+        t.designation,
+        t.post_type,
+        COALESCE(t.post_type, t.designation, '') as teaching_levels,
         t.current_city, 
         t.current_state, 
         t.gender, 
@@ -463,11 +465,11 @@ const getJobApplicants = async (req, res) => {
         t.expected_salary_max, 
         t.resume_url, 
         t.avatar_url,
-        u.email as teacher_email,
-        u.email as candidate_email
+        COALESCE(u.email, '') as teacher_email,
+        COALESCE(u.email, '') as candidate_email
       FROM job_applications a
-      JOIN teacher_profiles t ON a.teacher_id = t.id
-      JOIN users u ON t.user_id = u.id
+      LEFT JOIN teacher_profiles t ON (a.teacher_id = t.id OR a.teacher_id = t.user_id)
+      LEFT JOIN users u ON (t.user_id = u.id OR a.teacher_id = u.id)
       WHERE a.job_id = ?
       ORDER BY a.applied_at DESC
     `;
@@ -478,7 +480,8 @@ const getJobApplicants = async (req, res) => {
       success: true,
       data: {
         job: jobCheck[0],
-        applicants
+        applicants: applicants || [],
+        totalApplicants: (applicants || []).length
       }
     });
   } catch (error) {
@@ -504,11 +507,11 @@ const updateApplicationStatus = async (req, res) => {
 
     // Verify application belongs to a job owned by this school
     const appCheck = await query(
-      `SELECT a.id, a.teacher_id, j.title as job_title, s.school_name, t.user_id as teacher_user_id
+      `SELECT a.id, a.teacher_id, j.title as job_title, s.school_name, COALESCE(t.user_id, a.teacher_id) as teacher_user_id
        FROM job_applications a
        JOIN jobs j ON a.job_id = j.id
        JOIN school_profiles s ON j.school_id = s.id
-       JOIN teacher_profiles t ON a.teacher_id = t.id
+       LEFT JOIN teacher_profiles t ON (a.teacher_id = t.id OR a.teacher_id = t.user_id)
        WHERE a.id = ? AND j.school_id = ?`,
       [applicationId, schoolId]
     );
@@ -580,10 +583,14 @@ const getSchoolDashboard = async (req, res) => {
       `SELECT 
         a.id, a.status, a.applied_at,
         j.title as job_title,
-        t.full_name as teacher_name, t.highest_qualification, t.experience_years, t.primary_subject
+        COALESCE(t.full_name, u.email, 'Candidate') as teacher_name, 
+        t.highest_qualification, 
+        t.experience_years, 
+        t.primary_subject
        FROM job_applications a
        JOIN jobs j ON a.job_id = j.id
-       JOIN teacher_profiles t ON a.teacher_id = t.id
+       LEFT JOIN teacher_profiles t ON (a.teacher_id = t.id OR a.teacher_id = t.user_id)
+       LEFT JOIN users u ON (t.user_id = u.id OR a.teacher_id = u.id)
        WHERE j.school_id = ?
        ORDER BY a.applied_at DESC
        LIMIT 5`,
