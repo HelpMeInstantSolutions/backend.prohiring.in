@@ -313,6 +313,8 @@ const getMyJobs = async (req, res) => {
       SELECT 
         j.*,
         COUNT(a.id) as total_applicants,
+        COUNT(a.id) as applicant_count,
+        COUNT(a.id) as applicants_count,
         SUM(CASE WHEN a.status = 'shortlisted' THEN 1 ELSE 0 END) as shortlisted_count
       FROM jobs j
       LEFT JOIN job_applications a ON j.id = a.job_id
@@ -416,14 +418,42 @@ const getJobApplicants = async (req, res) => {
 
     const sql = `
       SELECT 
-        a.id as application_id, a.status as application_status, a.cover_note, a.applied_at, 
-        a.interview_date, a.interview_notes,
-        t.id as teacher_id, t.full_name, t.phone, t.highest_qualification, t.specialization,
-        t.experience_years, t.primary_subject, t.secondary_subjects, t.teaching_levels,
-        t.current_city, t.current_state, t.gender, t.dob, t.headline, t.bio,
-        t.qualifications_data, t.previous_jobs_data, t.current_job_data, t.tet_details,
-        t.expected_salary_min, t.expected_salary_max, t.resume_url, t.avatar_url,
-        u.email as teacher_email
+        a.id,
+        a.id as application_id, 
+        a.status,
+        a.status as application_status, 
+        a.cover_note, 
+        a.applied_at, 
+        a.interview_date, 
+        a.interview_notes,
+        t.id as teacher_id, 
+        t.full_name, 
+        t.full_name as candidate_name,
+        t.phone, 
+        t.phone as candidate_phone,
+        t.highest_qualification, 
+        t.specialization,
+        t.experience_years, 
+        t.primary_subject, 
+        t.secondary_subjects, 
+        t.teaching_levels,
+        t.current_city, 
+        t.current_state, 
+        t.gender, 
+        t.dob, 
+        t.headline, 
+        t.headline as candidate_headline,
+        t.bio,
+        t.qualifications_data, 
+        t.previous_jobs_data, 
+        t.current_job_data, 
+        t.tet_details,
+        t.expected_salary_min, 
+        t.expected_salary_max, 
+        t.resume_url, 
+        t.avatar_url,
+        u.email as teacher_email,
+        u.email as candidate_email
       FROM job_applications a
       JOIN teacher_profiles t ON a.teacher_id = t.id
       JOIN users u ON t.user_id = u.id
@@ -762,10 +792,10 @@ const submitSchoolInquiry = async (req, res) => {
     const schoolParam = req.params.id;
     const { senderName, senderEmail, senderPhone, subject, message } = req.body;
 
-    if (!senderName || !senderEmail || !message) {
+    if (!senderName || !message) {
       return res.status(400).json({
         success: false,
-        message: 'Name, email, and message are required to submit an inquiry.'
+        message: 'Name and message are required to submit an inquiry.'
       });
     }
 
@@ -799,6 +829,8 @@ const submitSchoolInquiry = async (req, res) => {
     const school = schoolRows[0];
     const senderUserId = req.user ? req.user.id : null;
     const senderRole = req.user ? req.user.role : 'visitor';
+    const cleanEmail = senderEmail && typeof senderEmail === 'string' && senderEmail.trim() ? senderEmail.trim() : null;
+    const cleanPhone = senderPhone && typeof senderPhone === 'string' && senderPhone.trim() ? senderPhone.trim() : null;
 
     await query(
       `INSERT INTO school_inquiries 
@@ -807,9 +839,9 @@ const submitSchoolInquiry = async (req, res) => {
       [
         school.id,
         senderName.trim(),
-        senderEmail.trim(),
-        senderPhone ? senderPhone.trim() : null,
-        subject ? subject.trim() : 'General Inquiry',
+        cleanEmail,
+        cleanPhone,
+        subject && subject.trim() ? subject.trim() : 'General Inquiry',
         message.trim(),
         senderRole,
         senderUserId
@@ -817,7 +849,7 @@ const submitSchoolInquiry = async (req, res) => {
     );
 
     // Dispatch email alert to school's registered email
-    const schoolEmail = school.user_email;
+    const schoolEmail = school.contact_email || school.user_email;
     if (schoolEmail) {
       try {
         const emailSubject = `New Inquiry from ${senderName.trim()} - ProHiring`;
@@ -829,8 +861,8 @@ const submitSchoolInquiry = async (req, res) => {
             </div>
             <div style="padding: 16px; background-color: #F8FAFC; border-radius: 8px; border: 1px solid #E2E8F0; margin-bottom: 20px;">
               <p style="margin: 0 0 8px 0; font-size: 14px;"><strong>From:</strong> ${senderName.trim()} (${senderRole === 'teacher' ? 'Registered Teacher' : 'Platform Visitor'})</p>
-              <p style="margin: 0 0 8px 0; font-size: 14px;"><strong>Email:</strong> <a href="mailto:${senderEmail.trim()}">${senderEmail.trim()}</a></p>
-              ${senderPhone ? `<p style="margin: 0 0 8px 0; font-size: 14px;"><strong>Phone:</strong> ${senderPhone.trim()}</p>` : ''}
+              ${cleanEmail ? `<p style="margin: 0 0 8px 0; font-size: 14px;"><strong>Email:</strong> <a href="mailto:${cleanEmail}">${cleanEmail}</a></p>` : '<p style="margin: 0 0 8px 0; font-size: 14px; color: #64748B;"><strong>Email:</strong> Not provided</p>'}
+              ${cleanPhone ? `<p style="margin: 0 0 8px 0; font-size: 14px;"><strong>Phone:</strong> ${cleanPhone}</p>` : ''}
               ${subject ? `<p style="margin: 0 0 8px 0; font-size: 14px;"><strong>Subject:</strong> ${subject.trim()}</p>` : ''}
             </div>
             <div style="padding: 16px; background-color: #FFFFFF; border-radius: 8px; border: 1px solid #E2E8F0; border-left: 4px solid #4F46E5; margin-bottom: 20px;">

@@ -625,7 +625,7 @@ async function autoMigrateColumns() {
           \`id\` INT AUTO_INCREMENT PRIMARY KEY,
           \`school_id\` INT NOT NULL,
           \`sender_name\` VARCHAR(150) NOT NULL,
-          \`sender_email\` VARCHAR(150) NOT NULL,
+          \`sender_email\` VARCHAR(150) DEFAULT NULL,
           \`sender_phone\` VARCHAR(25) DEFAULT NULL,
           \`subject\` VARCHAR(255) DEFAULT NULL,
           \`message\` TEXT NOT NULL,
@@ -637,6 +637,10 @@ async function autoMigrateColumns() {
           FOREIGN KEY (\`school_id\`) REFERENCES \`school_profiles\` (\`id\`) ON DELETE CASCADE
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
       `);
+      // Ensure sender_email allows null on existing tables
+      try {
+        await pool.query('ALTER TABLE `school_inquiries` MODIFY COLUMN `sender_email` VARCHAR(150) DEFAULT NULL');
+      } catch (_) {}
       console.log('[Auto-Migrate] school_inquiries table verified.');
     } catch (inqErr) {
       console.warn('[Auto-Migrate] school_inquiries table warning:', inqErr.message);
