@@ -1,5 +1,9 @@
 const fs = require('fs');
 const path = require('path');
+let db = null;
+try {
+  db = require('../config/database');
+} catch (e) {}
 
 class WebDAVService {
   constructor() {
@@ -189,37 +193,183 @@ class WebDAVService {
   }
 
   /**
-   * List files in uploads folder
+   * List files from remote Nextcloud WebDAV for a given folder
+   * @param {string} subfolder
+   * @returns {Promise<Array>}
+   */
+  async listRemoteFolderFiles(subfolder) {
+    try {
+      const url = `${this.baseUrl}/${subfolder}`;
+      const res = await fetch(url, {
+        method: 'PROPFIND',
+        headers: {
+          Authorization: this.authHeader,
+          Depth: '1',
+          'Content-Type': 'application/xml; charset=utf-8'
+        }
+      });
+
+      if (!res.ok && res.status !== 207) {
+        return [];
+      }
+
+      const xml = await res.text();
+      const responses = xml.split('</d:response>');
+      const files = [];
+
+      for (const chunk of responses) {
+        if (!chunk.includes('<d:response>') && !chunk.includes('<d:href>')) continue;
+        // Skip directory / collection itself
+        if (chunk.includes('<d:collection/>') || chunk.includes('<collection/>') || chunk.includes('<d:collection />')) continue;
+
+        const hrefMatch = chunk.match(/<d:href>([^<]+)<\/d:href>/i) || chunk.match(/<href>([^<]+)<\/href>/i);
+        if (!hrefMatch) continue;
+
+        const decodedHref = decodeURIComponent(hrefMatch[1]);
+        const filename = decodedHref.split('/').filter(Boolean).pop();
+        if (!filename) continue;
+
+        const sizeMatch = chunk.match(/<d:getcontentlength>(\d+)<\/d:getcontentlength>/i) || chunk.match(/<getcontentlength>(\d+)<\/getcontentlength>/i);
+        const sizeBytes = sizeMatch ? parseInt(sizeMatch[1], 10) : 0;
+
+        const mimeMatch = chunk.match(/<d:getcontenttype>([^<]+)<\/d:getcontenttype>/i) || chunk.match(/<getcontenttype>([^<]+)<\/getcontenttype>/i);
+        const mimeType = mimeMatch ? mimeMatch[1] : this.getMimeType(path.extname(filename).toLowerCase());
+
+        const modMatch = chunk.match(/<d:getlastmodified>([^<]+)<\/d:getlastmodified>/i) || chunk.match(/<getlastmodified>([^<]+)<\/getlastmodified>/i);
+        const modifiedAt = modMatch ? new Date(modMatch[1]) : new Date();
+
+        files.push({
+          name: filename,
+          subfolder,
+          url: `/uploads/${subfolder}/${filename}`,
+          sizeBytes,
+          sizeFormatted: this.formatBytes(sizeBytes),
+          mimeType,
+          modifiedAt,
+          source: 'cloud-webdav'
+        });
+      }
+
+      return files;
+    } catch (err) {
+      console.warn(`[WebDAVService] Error listing remote folder ${subfolder}:`, err.message);
+      return [];
+    }
+  }
+
+  /**
+   * List files in uploads folder (aggregates remote Nextcloud WebDAV, local disk, and DB records)
    * @param {string} [subfolder] - optional filter
    */
   async listFiles(subfolder = null) {
     const folders = subfolder ? [subfolder] : ['avatars', 'resumes', 'logos', 'schools', 'posts'];
-    const files = [];
+    const fileMap = new Map();
 
+    // 1. Fetch remote Nextcloud WebDAV files in parallel
+    try {
+      const remoteResults = await Promise.all(folders.map((f) => this.listRemoteFolderFiles(f)));
+      for (const list of remoteResults) {
+        for (const item of list) {
+          fileMap.set(item.url, item);
+        }
+      }
+    } catch (e) {
+      console.warn('[WebDAVService] Remote listing notice:', e.message);
+    }
+
+    // 2. Scan local disk uploads
     for (const f of folders) {
       const dir = path.join(this.localUploadDir, f);
       if (fs.existsSync(dir)) {
-        const filenames = fs.readdirSync(dir);
-        for (const fname of filenames) {
-          try {
-            const fpath = path.join(dir, fname);
-            const stats = fs.statSync(fpath);
-            if (stats.isFile()) {
-              files.push({
-                name: fname,
-                subfolder: f,
-                url: `/uploads/${f}/${fname}`,
-                sizeBytes: stats.size,
-                sizeFormatted: this.formatBytes(stats.size),
-                mimeType: this.getMimeType(path.extname(fname).toLowerCase()),
-                modifiedAt: stats.mtime
-              });
-            }
-          } catch (e) {}
-        }
+        try {
+          const filenames = fs.readdirSync(dir);
+          for (const fname of filenames) {
+            try {
+              const fpath = path.join(dir, fname);
+              const stats = fs.statSync(fpath);
+              if (stats.isFile()) {
+                const url = `/uploads/${f}/${fname}`;
+                if (!fileMap.has(url)) {
+                  fileMap.set(url, {
+                    name: fname,
+                    subfolder: f,
+                    url,
+                    sizeBytes: stats.size,
+                    sizeFormatted: this.formatBytes(stats.size),
+                    mimeType: this.getMimeType(path.extname(fname).toLowerCase()),
+                    modifiedAt: stats.mtime,
+                    source: 'local-disk'
+                  });
+                } else {
+                  const existing = fileMap.get(url);
+                  existing.isCachedLocally = true;
+                }
+              }
+            } catch (e) {}
+          }
+        } catch (e) {}
       }
     }
 
+    // 3. Scan database for any referenced upload URLs to ensure complete visibility
+    if (db && typeof db.query === 'function') {
+      try {
+        const addDbAsset = (rawUrl) => {
+          if (!rawUrl || typeof rawUrl !== 'string') return;
+          const match = rawUrl.match(/\/uploads\/([^\/]+)\/([^\/?#]+)/i);
+          if (match) {
+            const [, folder, fname] = match;
+            if (folders.includes(folder)) {
+              const url = `/uploads/${folder}/${fname}`;
+              if (!fileMap.has(url)) {
+                fileMap.set(url, {
+                  name: fname,
+                  subfolder: folder,
+                  url,
+                  sizeBytes: 0,
+                  sizeFormatted: 'Uploaded',
+                  mimeType: this.getMimeType(path.extname(fname).toLowerCase()),
+                  modifiedAt: new Date(),
+                  source: 'database-record'
+                });
+              }
+            }
+          }
+        };
+
+        const teachers = await db.query('SELECT avatar_url, resume_url FROM teacher_profiles WHERE avatar_url IS NOT NULL OR resume_url IS NOT NULL');
+        for (const t of teachers) {
+          addDbAsset(t.avatar_url);
+          addDbAsset(t.resume_url);
+        }
+
+        const schools = await db.query('SELECT logo_url, banner_url, campus_photos FROM school_profiles WHERE logo_url IS NOT NULL OR banner_url IS NOT NULL OR campus_photos IS NOT NULL');
+        for (const s of schools) {
+          addDbAsset(s.logo_url);
+          addDbAsset(s.banner_url);
+          if (s.campus_photos) {
+            try {
+              const photos = typeof s.campus_photos === 'string' ? JSON.parse(s.campus_photos) : s.campus_photos;
+              if (Array.isArray(photos)) {
+                for (const p of photos) {
+                  const u = typeof p === 'string' ? p : p?.url;
+                  addDbAsset(u);
+                }
+              }
+            } catch (_) {}
+          }
+        }
+
+        const posts = await db.query('SELECT image_url FROM community_posts WHERE image_url IS NOT NULL');
+        for (const p of posts) {
+          addDbAsset(p.image_url);
+        }
+      } catch (dbErr) {
+        console.warn('[WebDAVService] DB scan notice:', dbErr.message);
+      }
+    }
+
+    const files = Array.from(fileMap.values());
     // Sort newest first
     files.sort((a, b) => new Date(b.modifiedAt) - new Date(a.modifiedAt));
     return files;
@@ -229,36 +379,22 @@ class WebDAVService {
    * Aggregate storage usage across all categories
    */
   async getStorageStats() {
+    const allFiles = await this.listFiles();
     const folders = ['avatars', 'resumes', 'logos', 'schools', 'posts'];
     const categories = {};
-    let totalFiles = 0;
+    let totalFiles = allFiles.length;
     let totalSizeBytes = 0;
 
     for (const f of folders) {
-      let count = 0;
-      let sizeBytes = 0;
-      const dir = path.join(this.localUploadDir, f);
-      if (fs.existsSync(dir)) {
-        const filenames = fs.readdirSync(dir);
-        for (const fname of filenames) {
-          try {
-            const fpath = path.join(dir, fname);
-            const stats = fs.statSync(fpath);
-            if (stats.isFile()) {
-              count++;
-              sizeBytes += stats.size;
-            }
-          } catch (e) {}
-        }
-      }
+      const folderFiles = allFiles.filter((file) => file.subfolder === f);
+      const sizeBytes = folderFiles.reduce((acc, curr) => acc + (curr.sizeBytes || 0), 0);
+      totalSizeBytes += sizeBytes;
       categories[f] = {
         folder: f,
-        count,
+        count: folderFiles.length,
         sizeBytes,
         sizeFormatted: this.formatBytes(sizeBytes)
       };
-      totalFiles += count;
-      totalSizeBytes += sizeBytes;
     }
 
     // Check remote Nextcloud connectivity & quota
