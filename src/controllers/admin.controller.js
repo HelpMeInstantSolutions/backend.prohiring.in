@@ -1495,7 +1495,7 @@ const getStaffDisputes = async (req, res) => {
         tp.full_name as teacher_name,
         tp.avatar_url as teacher_avatar,
         u.email as teacher_email,
-        u.phone as teacher_phone
+        tp.phone as teacher_phone
       FROM school_staff ss
       JOIN school_profiles sp ON ss.school_id = sp.id
       JOIN teacher_profiles tp ON ss.teacher_id = tp.id

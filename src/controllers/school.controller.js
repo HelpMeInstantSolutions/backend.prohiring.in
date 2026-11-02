@@ -436,8 +436,8 @@ const getJobApplicants = async (req, res) => {
         COALESCE(t.id, a.teacher_id) as teacher_id, 
         COALESCE(t.full_name, u.email, 'Candidate') as candidate_name, 
         COALESCE(t.full_name, u.email, 'Candidate') as full_name, 
-        COALESCE(t.phone, u.phone, '') as candidate_phone, 
-        COALESCE(t.phone, u.phone, '') as phone, 
+        COALESCE(t.phone, '') as candidate_phone, 
+        COALESCE(t.phone, '') as phone, 
         COALESCE(u.email, '') as candidate_email,
         COALESCE(u.email, '') as teacher_email
       FROM job_applications a
