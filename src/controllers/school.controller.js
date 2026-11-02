@@ -688,11 +688,11 @@ const getPublicSchoolProfile = async (req, res) => {
       isFollowing = followCheck.length > 0;
     }
 
-    // Staff summary
+    // Staff summary (exclude disputed claims)
     const staffCountRows = await query(
       `SELECT 
-         SUM(CASE WHEN status = 'current' THEN 1 ELSE 0 END) as current_count,
-         SUM(CASE WHEN status = 'previous' THEN 1 ELSE 0 END) as previous_count
+         SUM(CASE WHEN status = 'current' AND (is_disputed = 0 OR is_disputed IS NULL) THEN 1 ELSE 0 END) as current_count,
+         SUM(CASE WHEN status = 'previous' AND (is_disputed = 0 OR is_disputed IS NULL) THEN 1 ELSE 0 END) as previous_count
        FROM school_staff WHERE school_id = ?`,
       [schoolId]
     );
@@ -751,7 +751,7 @@ const getSchoolStaff = async (req, res) => {
          tp.current_state
        FROM school_staff ss
        JOIN teacher_profiles tp ON ss.teacher_id = tp.id
-       WHERE ss.school_id = ?
+       WHERE ss.school_id = ? AND (ss.is_disputed = 0 OR ss.is_disputed IS NULL)
        ORDER BY 
          CASE WHEN ss.category = 'Leadership' THEN 1
               WHEN ss.category = 'Teaching Staff' THEN 2
