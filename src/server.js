@@ -15,6 +15,7 @@ const schoolRoutes = require('./routes/school.routes');
 const adminRoutes = require('./routes/admin.routes');
 const networkRoutes = require('./routes/network.routes');
 const communityRoutes = require('./routes/community.routes');
+const notificationRoutes = require('./routes/notification.routes');
 const { pool } = require('./config/database');
 
 const app = express();
@@ -101,6 +102,7 @@ app.use('/api/v1/network', networkRoutes);
 app.use('/api/v1/community', communityRoutes);
 app.use('/api/v1/storage', storageRoutes);
 app.use('/api/v1/admin', adminRoutes);
+app.use('/api/v1/notifications', notificationRoutes);
 
 // 404 Route Handler
 app.use((req, res) => {
@@ -196,6 +198,10 @@ async function autoMigrateColumns() {
         \`from_year\` VARCHAR(20) DEFAULT NULL,
         \`to_year\` VARCHAR(20) DEFAULT NULL,
         \`is_verified_by_school\` BOOLEAN DEFAULT 0,
+        \`is_disputed\` BOOLEAN DEFAULT 0,
+        \`dispute_reason\` TEXT DEFAULT NULL,
+        \`disputed_at\` TIMESTAMP NULL DEFAULT NULL,
+        \`disputed_by_school_id\` INT DEFAULT NULL,
         \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         \`updated_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         UNIQUE KEY \`uniq_school_teacher_role\` (\`school_id\`, \`teacher_id\`, \`status\`, \`designation\`),
@@ -205,7 +211,56 @@ async function autoMigrateColumns() {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     `);
 
-    // 4. Social follows graph table
+    // Ensure dispute columns exist if table was already created
+    const staffDisputeCols = [
+      ['is_disputed', 'BOOLEAN DEFAULT 0'],
+      ['dispute_reason', 'TEXT DEFAULT NULL'],
+      ['disputed_at', 'TIMESTAMP NULL DEFAULT NULL'],
+      ['disputed_by_school_id', 'INT DEFAULT NULL']
+    ];
+    for (const [colName, colDef] of staffDisputeCols) {
+      const [existing] = await pool.query(
+        `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS 
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'school_staff' AND COLUMN_NAME = ?`,
+        [colName]
+      );
+      if (existing.length === 0) {
+        console.log(`[Auto-Migrate] Adding column '${colName}' to school_staff...`);
+        await pool.query(`ALTER TABLE \`school_staff\` ADD COLUMN \`${colName}\` ${colDef};`);
+      }
+    }
+
+    // 4. Notifications table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS \`notifications\` (
+        \`id\` INT AUTO_INCREMENT PRIMARY KEY,
+        \`user_id\` INT NOT NULL,
+        \`type\` VARCHAR(50) NOT NULL,
+        \`title\` VARCHAR(255) NOT NULL,
+        \`message\` TEXT NOT NULL,
+        \`data\` LONGTEXT DEFAULT NULL,
+        \`is_read\` BOOLEAN DEFAULT 0,
+        \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX \`idx_user_read\` (\`user_id\`, \`is_read\`),
+        INDEX \`idx_user_created\` (\`user_id\`, \`created_at\` DESC),
+        FOREIGN KEY (\`user_id\`) REFERENCES \`users\` (\`id\`) ON DELETE CASCADE
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+
+    // 5. User Devices table for Android FCM push notification tokens
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS \`user_devices\` (
+        \`id\` INT AUTO_INCREMENT PRIMARY KEY,
+        \`user_id\` INT NOT NULL,
+        \`fcm_token\` VARCHAR(255) NOT NULL UNIQUE,
+        \`device_type\` VARCHAR(50) DEFAULT 'android',
+        \`updated_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX \`idx_user_device\` (\`user_id\`),
+        FOREIGN KEY (\`user_id\`) REFERENCES \`users\` (\`id\`) ON DELETE CASCADE
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+
+    // 6. Social follows graph table
     await pool.query(`
       CREATE TABLE IF NOT EXISTS \`follows\` (
         \`id\` INT AUTO_INCREMENT PRIMARY KEY,

@@ -73,5 +73,10 @@ router.post('/pages', adminController.createCustomPage);
 router.put('/pages/:id', adminController.updateCustomPage);
 router.delete('/pages/:id', adminController.deleteCustomPage);
 
+// Staff Directory Disputes & Reports from Schools
+router.get('/staff-disputes', adminController.getStaffDisputes);
+router.delete('/staff/:id', adminController.deleteStaffRecord);
+router.put('/staff/:id/resolve', adminController.resolveStaffDispute);
+
 module.exports = router;
 

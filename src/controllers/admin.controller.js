@@ -1473,6 +1473,80 @@ const deleteCustomPage = async (req, res) => {
   }
 };
 
+// GET /api/v1/admin/staff-disputes - View all staff records reported/disputed by schools
+const getStaffDisputes = async (req, res) => {
+  try {
+    const rows = await query(`
+      SELECT 
+        ss.id as staff_id,
+        ss.school_id,
+        ss.teacher_id,
+        ss.status as employment_status,
+        ss.designation,
+        ss.subject,
+        ss.from_year,
+        ss.to_year,
+        ss.is_disputed,
+        ss.dispute_reason,
+        ss.disputed_at,
+        sp.school_name,
+        sp.city as school_city,
+        sp.state as school_state,
+        tp.full_name as teacher_name,
+        tp.avatar_url as teacher_avatar,
+        u.email as teacher_email,
+        u.phone as teacher_phone
+      FROM school_staff ss
+      JOIN school_profiles sp ON ss.school_id = sp.id
+      JOIN teacher_profiles tp ON ss.teacher_id = tp.id
+      JOIN users u ON tp.user_id = u.id
+      WHERE ss.is_disputed = 1
+      ORDER BY ss.disputed_at DESC
+    `);
+
+    return res.status(200).json({
+      success: true,
+      data: rows
+    });
+  } catch (error) {
+    console.error('getStaffDisputes Error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to retrieve staff disputes.' });
+  }
+};
+
+// DELETE /api/v1/admin/staff/:id - Delete a disputed or misleading staff record
+const deleteStaffRecord = async (req, res) => {
+  try {
+    const { id } = req.params;
+    await query('DELETE FROM school_staff WHERE id = ?', [id]);
+    return res.status(200).json({
+      success: true,
+      message: 'Staff link successfully removed from school directory.'
+    });
+  } catch (error) {
+    console.error('deleteStaffRecord Error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to delete staff record.' });
+  }
+};
+
+// PUT /api/v1/admin/staff/:id/resolve - Dismiss dispute and keep staff record
+const resolveStaffDispute = async (req, res) => {
+  try {
+    const { id } = req.params;
+    await query(
+      'UPDATE school_staff SET is_disputed = 0, dispute_reason = NULL, disputed_at = NULL WHERE id = ?',
+      [id]
+    );
+    return res.status(200).json({
+      success: true,
+      message: 'Staff dispute resolved and dismissed.'
+    });
+  } catch (error) {
+    console.error('resolveStaffDispute Error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to resolve staff dispute.' });
+  }
+};
+
 module.exports = {
   getDashboardStats,
   getSchools,
@@ -1508,6 +1582,9 @@ module.exports = {
   getCustomPageById,
   createCustomPage,
   updateCustomPage,
-  deleteCustomPage
+  deleteCustomPage,
+  getStaffDisputes,
+  deleteStaffRecord,
+  resolveStaffDispute
 };
 

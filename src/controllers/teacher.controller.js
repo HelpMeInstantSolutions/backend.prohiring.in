@@ -1,6 +1,7 @@
 const path = require('path');
 const fs = require('fs');
 const { query } = require('../config/database');
+const notificationService = require('../services/notification.service');
 
 // GET /api/v1/teacher/profile
 const getProfile = async (req, res) => {
@@ -411,10 +412,33 @@ const applyToJob = async (req, res) => {
       });
     }
 
-    await query(
+    const appResult = await query(
       'INSERT INTO job_applications (job_id, teacher_id, cover_note, status) VALUES (?, ?, ?, ?)',
       [jobId, teacherId, coverNote || null, 'applied']
     );
+
+    // Notify school recruiter about the application
+    try {
+      const jobInfo = await query(
+        `SELECT j.title, sp.user_id as school_user_id, tp.full_name as teacher_name 
+         FROM jobs j 
+         JOIN school_profiles sp ON j.school_id = sp.id 
+         JOIN teacher_profiles tp ON tp.id = ? 
+         WHERE j.id = ?`,
+        [teacherId, jobId]
+      );
+      if (jobInfo.length > 0) {
+        notificationService.notifyApplicationReceived({
+          schoolUserId: jobInfo[0].school_user_id,
+          jobTitle: jobInfo[0].title,
+          teacherName: jobInfo[0].teacher_name,
+          jobId,
+          applicationId: appResult.insertId
+        }).catch(() => {});
+      }
+    } catch (notifErr) {
+      console.warn('[Application] Notification dispatch notice:', notifErr.message);
+    }
 
     return res.status(201).json({
       success: true,

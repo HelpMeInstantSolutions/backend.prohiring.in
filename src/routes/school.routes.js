@@ -32,6 +32,10 @@ router.post('/add-campus-link', schoolController.addCampusPhotoLink);
 router.delete('/campus-photos/:index', schoolController.deleteCampusPhoto);
 router.get('/dashboard', schoolController.getSchoolDashboard);
 
+// Staff Directory & Dispute/Report Management
+router.get('/my-staff', schoolController.getMyStaff);
+router.post('/staff/:staffId/dispute', schoolController.disputeStaff);
+
 // Inquiries / Queries received by school
 router.get('/inquiries', schoolController.getSchoolInquiries);
 router.put('/inquiries/:id/status', schoolController.updateInquiryStatus);

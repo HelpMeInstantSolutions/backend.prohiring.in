@@ -3,6 +3,7 @@ const path = require('path');
 const { query } = require('../config/database');
 const webdavService = require('../services/webdav.service');
 const { dispatchEmail } = require('../services/otp.service');
+const notificationService = require('../services/notification.service');
 
 // GET /api/v1/school/profile
 const getProfile = async (req, res) => {
@@ -1140,6 +1141,159 @@ const deleteCampusPhoto = async (req, res) => {
   }
 };
 
+// GET /api/v1/school/my-staff
+// Retrieve current and previous working faculty for the logged-in school
+const getMyStaff = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const schoolRows = await query('SELECT id, school_name, slug FROM school_profiles WHERE user_id = ?', [userId]);
+    if (schoolRows.length === 0) {
+      return res.status(404).json({ success: false, message: 'School profile not found.' });
+    }
+
+    const school = schoolRows[0];
+
+    const staffRows = await query(
+      `SELECT 
+         ss.id as staff_id,
+         ss.school_id,
+         ss.teacher_id,
+         ss.status,
+         ss.category,
+         ss.designation,
+         ss.subject,
+         ss.from_year,
+         ss.to_year,
+         ss.is_verified_by_school,
+         ss.is_disputed,
+         ss.dispute_reason,
+         ss.disputed_at,
+         tp.id as teacher_profile_id,
+         tp.user_id as teacher_user_id,
+         tp.full_name,
+         tp.avatar_url,
+         tp.highest_qualification,
+         tp.experience_years,
+         tp.primary_subject,
+         tp.current_city,
+         tp.current_state,
+         tp.phone as teacher_phone,
+         u.email as teacher_email
+       FROM school_staff ss
+       JOIN teacher_profiles tp ON ss.teacher_id = tp.id
+       JOIN users u ON tp.user_id = u.id
+       WHERE ss.school_id = ?
+       ORDER BY 
+         ss.is_disputed ASC,
+         CASE WHEN ss.category = 'Leadership' THEN 1
+              WHEN ss.category = 'Teaching Staff' THEN 2
+              WHEN ss.category = 'Sports & Arts' THEN 3
+              ELSE 4 END,
+         ss.from_year DESC`,
+      [school.id]
+    );
+
+    const currentStaff = staffRows.filter((s) => s.status === 'current');
+    const previousStaff = staffRows.filter((s) => s.status === 'previous');
+    const disputedStaff = staffRows.filter((s) => Boolean(s.is_disputed));
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        school,
+        currentStaff,
+        previousStaff,
+        disputedStaff,
+        totalCurrent: currentStaff.length,
+        totalPrevious: previousStaff.length,
+        totalDisputed: disputedStaff.length,
+        totalStaff: staffRows.length
+      }
+    });
+  } catch (error) {
+    console.error('getMyStaff Error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to retrieve staff directory.'
+    });
+  }
+};
+
+// POST /api/v1/school/staff/:staffId/dispute
+// School can report a staff claim as false or misleading
+const disputeStaff = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const staffId = req.params.staffId;
+    const { reason } = req.body;
+
+    if (!reason || !reason.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: 'A clear reason is required to dispute or report this staff claim.'
+      });
+    }
+
+    const schoolRows = await query('SELECT id, school_name FROM school_profiles WHERE user_id = ?', [userId]);
+    if (schoolRows.length === 0) {
+      return res.status(404).json({ success: false, message: 'School profile not found.' });
+    }
+
+    const school = schoolRows[0];
+
+    const staffRows = await query(
+      `SELECT ss.*, tp.full_name as teacher_name 
+       FROM school_staff ss 
+       JOIN teacher_profiles tp ON ss.teacher_id = tp.id 
+       WHERE ss.id = ? AND ss.school_id = ?`,
+      [staffId, school.id]
+    );
+
+    if (staffRows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Staff member record not found or does not belong to your institution.'
+      });
+    }
+
+    const staffMember = staffRows[0];
+
+    await query(
+      `UPDATE school_staff 
+       SET is_disputed = 1, 
+           dispute_reason = ?, 
+           disputed_at = NOW(), 
+           disputed_by_school_id = ? 
+       WHERE id = ?`,
+      [reason.trim(), school.id, staffId]
+    );
+
+    // Notify administrators about the dispute
+    notificationService.notifyStaffDisputed({
+      schoolName: school.school_name,
+      teacherName: staffMember.teacher_name,
+      reason: reason.trim(),
+      staffId
+    }).catch(() => {});
+
+    return res.status(200).json({
+      success: true,
+      message: 'Staff claim reported to Platform Administrators for verification and removal.',
+      data: {
+        staffId,
+        isDisputed: true,
+        disputeReason: reason.trim()
+      }
+    });
+  } catch (error) {
+    console.error('disputeStaff Error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to submit staff dispute.'
+    });
+  }
+};
+
 module.exports = {
   getProfile,
   updateProfile,
@@ -1154,6 +1308,8 @@ module.exports = {
   searchSchools,
   getPublicSchoolProfile,
   getSchoolStaff,
+  getMyStaff,
+  disputeStaff,
   submitSchoolInquiry,
   getSchoolInquiries,
   updateInquiryStatus,
