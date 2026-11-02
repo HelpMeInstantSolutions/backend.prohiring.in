@@ -167,7 +167,8 @@ async function autoMigrateColumns() {
       ['latitude', 'DECIMAL(10, 8) DEFAULT NULL'],
       ['longitude', 'DECIMAL(11, 8) DEFAULT NULL'],
       ['maps_url', 'TEXT DEFAULT NULL'],
-      ['banner_url', 'TEXT DEFAULT NULL']
+      ['banner_url', 'TEXT DEFAULT NULL'],
+      ['slug', 'VARCHAR(150) DEFAULT NULL']
     ];
 
     for (const [colName, colDef] of schoolColumnsToEnsure) {

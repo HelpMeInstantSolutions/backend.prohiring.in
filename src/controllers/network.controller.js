@@ -244,10 +244,125 @@ const getMyFollowers = async (req, res) => {
   }
 };
 
+/**
+ * Unified network search for schools and teachers
+ * GET /api/v1/network/search?q=...&type=all|school|teacher&subject=...&city=...
+ */
+const searchNetwork = async (req, res) => {
+  try {
+    const q = (req.query.q || '').trim();
+    const type = (req.query.type || 'all').toLowerCase();
+    const subject = (req.query.subject || '').trim();
+    const city = (req.query.city || '').trim();
+    const currentUserId = req.user?.id || 0;
+
+    let schools = [];
+    let teachers = [];
+
+    // 1. Search Schools if type is 'all' or 'school'
+    if (type === 'all' || type === 'school') {
+      let schoolSql = `
+        SELECT 
+          s.id, 
+          s.school_name, 
+          s.board, 
+          s.city, 
+          s.state, 
+          s.logo_url, 
+          s.slug, 
+          s.is_verified, 
+          s.verification_status,
+          (SELECT COUNT(*) FROM follows f_cnt WHERE f_cnt.target_type = 'school' AND f_cnt.target_id = s.id) as followers_count,
+          CASE WHEN f.id IS NOT NULL THEN 1 ELSE 0 END as is_following
+        FROM school_profiles s
+        LEFT JOIN follows f ON (f.follower_user_id = ? AND f.target_type = 'school' AND f.target_id = s.id)
+        WHERE 1=1
+      `;
+      const schoolParams = [currentUserId];
+
+      if (q) {
+        schoolSql += ' AND (s.school_name LIKE ? OR s.city LIKE ? OR s.state LIKE ? OR s.board LIKE ?)';
+        schoolParams.push(`%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`);
+      }
+      if (city) {
+        schoolSql += ' AND (s.city LIKE ? OR s.state LIKE ?)';
+        schoolParams.push(`%${city}%`, `%${city}%`);
+      }
+
+      schoolSql += ' ORDER BY s.is_verified DESC, followers_count DESC, s.id DESC LIMIT 40';
+      schools = await query(schoolSql, schoolParams);
+    }
+
+    // 2. Search Teachers if type is 'all' or 'teacher'
+    if (type === 'all' || type === 'teacher') {
+      let teacherSql = `
+        SELECT 
+          t.id, 
+          t.user_id,
+          t.full_name, 
+          t.post_type,
+          t.designation, 
+          t.primary_subject, 
+          t.secondary_subjects, 
+          t.highest_qualification,
+          t.experience_years, 
+          t.current_city, 
+          t.current_state, 
+          t.avatar_url, 
+          t.is_profile_completed,
+          (SELECT COUNT(*) FROM follows f_cnt WHERE f_cnt.target_type = 'teacher' AND f_cnt.target_id = t.id) as followers_count,
+          CASE WHEN f.id IS NOT NULL THEN 1 ELSE 0 END as is_following
+        FROM teacher_profiles t
+        LEFT JOIN follows f ON (f.follower_user_id = ? AND f.target_type = 'teacher' AND f.target_id = t.id)
+        WHERE 1=1
+      `;
+      const teacherParams = [currentUserId];
+
+      // Exclude logged in user from teacher search results
+      if (currentUserId) {
+        teacherSql += ' AND t.user_id != ?';
+        teacherParams.push(currentUserId);
+      }
+
+      if (q) {
+        teacherSql += ' AND (t.full_name LIKE ? OR t.primary_subject LIKE ? OR t.secondary_subjects LIKE ? OR t.designation LIKE ? OR t.current_city LIKE ?)';
+        teacherParams.push(`%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`);
+      }
+      if (subject) {
+        teacherSql += ' AND (t.primary_subject LIKE ? OR t.secondary_subjects LIKE ?)';
+        teacherParams.push(`%${subject}%`, `%${subject}%`);
+      }
+      if (city) {
+        teacherSql += ' AND (t.current_city LIKE ? OR t.current_state LIKE ?)';
+        teacherParams.push(`%${city}%`, `%${city}%`);
+      }
+
+      teacherSql += ' ORDER BY t.is_profile_completed DESC, followers_count DESC, t.id DESC LIMIT 40';
+      teachers = await query(teacherSql, teacherParams);
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        schools: (schools || []).map(s => ({ ...s, is_following: Boolean(s.is_following) })),
+        teachers: (teachers || []).map(t => ({ ...t, is_following: Boolean(t.is_following) })),
+        totalCount: (schools ? schools.length : 0) + (teachers ? teachers.length : 0)
+      }
+    });
+  } catch (error) {
+    console.error('searchNetwork Error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to search network directory.'
+    });
+  }
+};
+
 module.exports = {
   followTarget,
   unfollowTarget,
   getFollowStatus,
   getMyFollowing,
-  getMyFollowers
+  getMyFollowers,
+  searchNetwork
 };
