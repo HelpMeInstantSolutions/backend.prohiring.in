@@ -118,11 +118,13 @@ const getProfile = async (req, res) => {
 
     const previousJobs = safeParse(row.previous_jobs_data);
     let expYears = row.experience_years;
-    if ((expYears == null || expYears == 0) && Array.isArray(previousJobs) && previousJobs.length > 0) {
+    if (Array.isArray(previousJobs) && previousJobs.length > 0) {
       const autoExp = calculateExperienceFromJobs(previousJobs);
       if (autoExp > 0) {
         expYears = autoExp;
-        query('UPDATE teacher_profiles SET experience_years = ? WHERE id = ?', [autoExp, row.id]).catch(() => {});
+        if (parseFloat(row.experience_years) !== autoExp) {
+          query('UPDATE teacher_profiles SET experience_years = ? WHERE id = ?', [autoExp, row.id]).catch(() => {});
+        }
       }
     }
 
@@ -192,17 +194,15 @@ const updateProfile = async (req, res) => {
       if (isNaN(finalExperienceYears)) finalExperienceYears = 0;
     }
 
-    // Auto-calculate from previousJobsData if experienceYears is 0, empty, or not passed
-    if (finalExperienceYears === undefined || finalExperienceYears === null || finalExperienceYears === 0) {
-      let parsedJobs = previousJobsData;
-      if (typeof parsedJobs === 'string') {
-        try { parsedJobs = JSON.parse(parsedJobs); } catch (e) { parsedJobs = []; }
-      }
-      if (Array.isArray(parsedJobs) && parsedJobs.length > 0) {
-        const autoExp = calculateExperienceFromJobs(parsedJobs);
-        if (autoExp > 0) {
-          finalExperienceYears = autoExp;
-        }
+    // Always prioritize auto-calculated experience from previousJobsData if school history is provided
+    let parsedJobs = previousJobsData;
+    if (typeof parsedJobs === 'string') {
+      try { parsedJobs = JSON.parse(parsedJobs); } catch (e) { parsedJobs = []; }
+    }
+    if (Array.isArray(parsedJobs) && parsedJobs.length > 0) {
+      const autoExp = calculateExperienceFromJobs(parsedJobs);
+      if (autoExp > 0) {
+        finalExperienceYears = autoExp;
       }
     }
 
@@ -987,11 +987,13 @@ const getPublicTeacherProfile = async (req, res) => {
 
     const parsedPreviousJobs = safeParse(t.previous_jobs_data);
     let expYears = t.experience_years;
-    if ((expYears == null || expYears == 0) && Array.isArray(parsedPreviousJobs) && parsedPreviousJobs.length > 0) {
+    if (Array.isArray(parsedPreviousJobs) && parsedPreviousJobs.length > 0) {
       const autoExp = calculateExperienceFromJobs(parsedPreviousJobs);
       if (autoExp > 0) {
         expYears = autoExp;
-        query('UPDATE teacher_profiles SET experience_years = ? WHERE id = ?', [autoExp, t.id]).catch(() => {});
+        if (parseFloat(t.experience_years) !== autoExp) {
+          query('UPDATE teacher_profiles SET experience_years = ? WHERE id = ?', [autoExp, t.id]).catch(() => {});
+        }
       }
     }
 
