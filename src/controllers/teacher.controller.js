@@ -13,6 +13,81 @@ const generateTeacherSlug = (fullName, teacherId) => {
   return `${base || 'educator'}-${teacherId}`;
 };
 
+// Helper to calculate total teaching experience (in years) from school jobs array
+const calculateExperienceFromJobs = (jobsList) => {
+  if (!Array.isArray(jobsList) || jobsList.length === 0) return 0;
+  const intervals = [];
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth();
+
+  const getMonthIndex = (m, defaultMonth = 0) => {
+    if (m === undefined || m === null || m === '') return defaultMonth;
+    if (typeof m === 'number') return Math.max(0, Math.min(11, m));
+    const s = String(m).trim().toLowerCase();
+    const num = parseInt(s, 10);
+    if (!isNaN(num) && num >= 1 && num <= 12) return num - 1;
+    const shortNames = {
+      jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
+      jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11
+    };
+    const key = s.slice(0, 3);
+    return shortNames[key] !== undefined ? shortNames[key] : defaultMonth;
+  };
+
+  for (const job of jobsList) {
+    if (!job) continue;
+    const schoolName = (job.schoolName || '').trim();
+    if (!schoolName) continue;
+
+    const fromYear = parseInt(job.fromYear, 10);
+    if (!fromYear || isNaN(fromYear) || fromYear < 1960 || fromYear > 2100) continue;
+    const fromMonth = getMonthIndex(job.fromMonth, 5);
+
+    let toYear;
+    let toMonth;
+    const isCurrent = Boolean(job.isCurrent || String(job.toYear).toLowerCase() === 'present');
+    if (isCurrent) {
+      toYear = currentYear;
+      toMonth = currentMonth;
+    } else {
+      toYear = parseInt(job.toYear, 10);
+      if (!toYear || isNaN(toYear) || toYear < 1960 || toYear > 2100) continue;
+      toMonth = getMonthIndex(job.toMonth, 4);
+    }
+
+    const start = fromYear * 12 + fromMonth;
+    const end = toYear * 12 + toMonth;
+    if (end >= start) {
+      intervals.push({ start, end });
+    }
+  }
+
+  if (intervals.length === 0) return 0;
+  intervals.sort((a, b) => a.start - b.start);
+
+  const merged = [];
+  for (const iv of intervals) {
+    if (merged.length === 0) {
+      merged.push({ ...iv });
+    } else {
+      const last = merged[merged.length - 1];
+      if (iv.start <= last.end + 1) {
+        last.end = Math.max(last.end, iv.end);
+      } else {
+        merged.push({ ...iv });
+      }
+    }
+  }
+
+  let totalMonths = 0;
+  for (const iv of merged) {
+    totalMonths += (iv.end - iv.start) + 1;
+  }
+
+  return Math.round((totalMonths / 12) * 10) / 10;
+};
+
 // GET /api/v1/teacher/profile
 const getProfile = async (req, res) => {
   try {
@@ -41,15 +116,26 @@ const getProfile = async (req, res) => {
       await query('UPDATE teacher_profiles SET slug = ? WHERE id = ?', [slug, row.id]).catch(() => {});
     }
 
+    const previousJobs = safeParse(row.previous_jobs_data);
+    let expYears = row.experience_years;
+    if ((expYears == null || expYears == 0) && Array.isArray(previousJobs) && previousJobs.length > 0) {
+      const autoExp = calculateExperienceFromJobs(previousJobs);
+      if (autoExp > 0) {
+        expYears = autoExp;
+        query('UPDATE teacher_profiles SET experience_years = ? WHERE id = ?', [autoExp, row.id]).catch(() => {});
+      }
+    }
+
     return res.status(200).json({
       success: true,
       data: {
         ...row,
+        experience_years: expYears,
         slug,
         isOpenToWork: row.is_open_to_work === 1 || row.is_open_to_work === null || row.is_open_to_work === undefined,
         family_details: safeParse(row.family_details),
         qualifications_data: safeParse(row.qualifications_data),
-        previous_jobs_data: safeParse(row.previous_jobs_data),
+        previous_jobs_data: previousJobs,
         current_job_data: safeParse(row.current_job_data),
         tet_details: safeParse(row.tet_details)
       }
@@ -100,6 +186,26 @@ const updateProfile = async (req, res) => {
       preferred_location
     } = req.body;
 
+    let finalExperienceYears = experienceYears;
+    if (finalExperienceYears !== undefined && finalExperienceYears !== null && finalExperienceYears !== '') {
+      finalExperienceYears = parseFloat(finalExperienceYears);
+      if (isNaN(finalExperienceYears)) finalExperienceYears = 0;
+    }
+
+    // Auto-calculate from previousJobsData if experienceYears is 0, empty, or not passed
+    if (finalExperienceYears === undefined || finalExperienceYears === null || finalExperienceYears === 0) {
+      let parsedJobs = previousJobsData;
+      if (typeof parsedJobs === 'string') {
+        try { parsedJobs = JSON.parse(parsedJobs); } catch (e) { parsedJobs = []; }
+      }
+      if (Array.isArray(parsedJobs) && parsedJobs.length > 0) {
+        const autoExp = calculateExperienceFromJobs(parsedJobs);
+        if (autoExp > 0) {
+          finalExperienceYears = autoExp;
+        }
+      }
+    }
+
     const serialize = (val) => {
       if (val === undefined || val === null) return null;
       if (typeof val === 'string') return val;
@@ -112,7 +218,7 @@ const updateProfile = async (req, res) => {
     const updateParams = [
       fullName, phone, gender, dob, address, pincode, languages, headline,
       postType, designation,
-      highestQualification, specialization, experienceYears, primarySubject, secondarySubjects,
+      highestQualification, specialization, finalExperienceYears, primarySubject, secondarySubjects,
       currentCity, currentState, expectedSalaryMin, expectedSalaryMax, bio,
       serialize(familyDetails), serialize(qualificationsData), serialize(previousJobsData),
       serialize(currentJobData), serialize(tetDetails), profileStep || 1,
@@ -879,6 +985,16 @@ const getPublicTeacherProfile = async (req, res) => {
       [teacherId]
     );
 
+    const parsedPreviousJobs = safeParse(t.previous_jobs_data);
+    let expYears = t.experience_years;
+    if ((expYears == null || expYears == 0) && Array.isArray(parsedPreviousJobs) && parsedPreviousJobs.length > 0) {
+      const autoExp = calculateExperienceFromJobs(parsedPreviousJobs);
+      if (autoExp > 0) {
+        expYears = autoExp;
+        query('UPDATE teacher_profiles SET experience_years = ? WHERE id = ?', [autoExp, t.id]).catch(() => {});
+      }
+    }
+
     return res.status(200).json({
       success: true,
       data: {
@@ -893,13 +1009,13 @@ const getPublicTeacherProfile = async (req, res) => {
         secondarySubjects: t.secondary_subjects,
         highestQualification: t.highest_qualification,
         specialization: t.specialization,
-        experienceYears: t.experience_years,
+        experienceYears: expYears,
         currentCity: t.current_city,
         currentState: t.current_state,
         bio: t.bio,
         isOpenToWork: t.is_open_to_work === 1 || t.is_open_to_work === null || t.is_open_to_work === undefined,
         qualificationsData: safeParse(t.qualifications_data),
-        previousJobsData: safeParse(t.previous_jobs_data),
+        previousJobsData: parsedPreviousJobs,
         currentJobData: safeParse(t.current_job_data),
         isProfileCompleted: !!t.is_profile_completed,
         isFollowing,
