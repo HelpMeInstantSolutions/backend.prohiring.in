@@ -1,31 +1,9 @@
 const multer = require('multer');
 const path = require('path');
-const fs = require('fs');
 
-const uploadDirectory = path.join(__dirname, '../../uploads');
-if (!fs.existsSync(uploadDirectory)) {
-  fs.mkdirSync(uploadDirectory, { recursive: true });
-}
-
-// Subdirectories
-['resumes', 'logos', 'avatars'].forEach(folder => {
-  const p = path.join(uploadDirectory, folder);
-  if (!fs.existsSync(p)) fs.mkdirSync(p, { recursive: true });
-});
-
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    let subfolder = 'avatars';
-    if (file.fieldname === 'resume') subfolder = 'resumes';
-    if (file.fieldname === 'logo' || file.fieldname === 'banner') subfolder = 'logos';
-    cb(null, path.join(uploadDirectory, subfolder));
-  },
-  filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname);
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
-    cb(null, `${file.fieldname}-${uniqueSuffix}${ext}`);
-  }
-});
+// Use memoryStorage to avoid EACCES permission denied errors on Linux/production disks
+// Files are held in memory as buffers and uploaded directly to Nextcloud WebDAV
+const memoryStorage = multer.memoryStorage();
 
 const fileFilter = (req, file, cb) => {
   if (file.fieldname === 'resume') {
@@ -47,12 +25,49 @@ const fileFilter = (req, file, cb) => {
   }
 };
 
-const upload = multer({
-  storage,
+const rawUpload = multer({
+  storage: memoryStorage,
   limits: {
     fileSize: (parseInt(process.env.MAX_FILE_SIZE_MB, 10) || 10) * 1024 * 1024
   },
   fileFilter
 });
 
+const populateFilename = (file) => {
+  if (!file) return;
+  const ext = path.extname(file.originalname || '').toLowerCase();
+  const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+  file.filename = `${file.fieldname || 'file'}-${uniqueSuffix}${ext}`;
+};
+
+// Wrapper providing single, array, and fields methods with generated filenames
+const upload = {
+  single: (fieldName) => (req, res, next) => {
+    rawUpload.single(fieldName)(req, res, (err) => {
+      if (err) return next(err);
+      if (req.file) populateFilename(req.file);
+      next();
+    });
+  },
+  array: (fieldName, maxCount) => (req, res, next) => {
+    rawUpload.array(fieldName, maxCount)(req, res, (err) => {
+      if (err) return next(err);
+      if (Array.isArray(req.files)) req.files.forEach(populateFilename);
+      next();
+    });
+  },
+  fields: (fieldsArray) => (req, res, next) => {
+    rawUpload.fields(fieldsArray)(req, res, (err) => {
+      if (err) return next(err);
+      if (req.files) {
+        Object.values(req.files).forEach((fileArr) => {
+          if (Array.isArray(fileArr)) fileArr.forEach(populateFilename);
+        });
+      }
+      next();
+    });
+  }
+};
+
 module.exports = { upload };
+

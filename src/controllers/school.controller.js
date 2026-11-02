@@ -139,8 +139,13 @@ const uploadLogo = async (req, res) => {
     const oldLogoUrl = existingRows[0]?.logo_url;
 
     if (req.file) {
-      const buffer = fs.readFileSync(req.file.path);
-      logoUrl = await webdavService.uploadFile('logos', req.file.filename, buffer, req.file.mimetype);
+      const buffer = req.file.buffer || (req.file.path ? fs.readFileSync(req.file.path) : null);
+      if (!buffer) {
+        return res.status(400).json({ success: false, message: 'Invalid or empty logo file provided.' });
+      }
+      const ext = path.extname(req.file.originalname || '') || '.png';
+      const filename = req.file.filename || `logo-${userId}-${Date.now()}${ext}`;
+      logoUrl = await webdavService.uploadFile('logos', filename, buffer, req.file.mimetype || 'image/png');
     } else if (req.body?.logoBase64) {
       const base64Data = req.body.logoBase64.replace(/^data:image\/\w+;base64,/, '');
       const buffer = Buffer.from(base64Data, 'base64');
@@ -184,8 +189,13 @@ const uploadBanner = async (req, res) => {
     const oldBannerUrl = existingRows[0]?.banner_url;
 
     if (req.file) {
-      const buffer = fs.readFileSync(req.file.path);
-      bannerUrl = await webdavService.uploadFile('schools', req.file.filename, buffer, req.file.mimetype);
+      const buffer = req.file.buffer || (req.file.path ? fs.readFileSync(req.file.path) : null);
+      if (!buffer) {
+        return res.status(400).json({ success: false, message: 'Invalid or empty banner file provided.' });
+      }
+      const ext = path.extname(req.file.originalname || '') || '.jpg';
+      const filename = req.file.filename || `banner-${userId}-${Date.now()}${ext}`;
+      bannerUrl = await webdavService.uploadFile('schools', filename, buffer, req.file.mimetype || 'image/jpeg');
     } else if (req.body?.bannerBase64) {
       const base64Data = req.body.bannerBase64.replace(/^data:image\/\w+;base64,/, '');
       const buffer = Buffer.from(base64Data, 'base64');
@@ -960,6 +970,12 @@ const updateInquiryStatus = async (req, res) => {
   }
 };
 
+// Helper to check if photo is a server-stored file
+const isServerUpload = (url) => {
+  if (!url || typeof url !== 'string') return false;
+  return url.startsWith('/uploads/') || url.includes('backend.prohiring.in') || url.includes('drive2.xhost.co.in');
+};
+
 // POST /api/v1/school/upload-campus-photo
 const uploadCampusPhoto = async (req, res) => {
   try {
@@ -982,18 +998,27 @@ const uploadCampusPhoto = async (req, res) => {
       photos = [];
     }
 
-    if (photos.length >= 6) {
-      if (req.file.path && fs.existsSync(req.file.path)) {
-        fs.unlinkSync(req.file.path);
-      }
+    // 6 photo limit applies only to server-uploaded files; external image links have no limit
+    const serverPhotoCount = photos.filter((p) => {
+      const u = typeof p === 'string' ? p : (p?.url || '');
+      return isServerUpload(u);
+    }).length;
+
+    if (serverPhotoCount >= 6) {
       return res.status(400).json({
         success: false,
-        message: 'Campus photo gallery is limited to a maximum of 6 photos. Please remove an existing photo to upload a new one.'
+        message: 'Campus photo gallery is limited to a maximum of 6 uploaded server photos. You can add unlimited photos via external image links, or remove an uploaded photo to make room.'
       });
     }
 
-    const buffer = fs.readFileSync(req.file.path);
-    const photoUrl = await webdavService.uploadFile('schools', req.file.filename, buffer, req.file.mimetype);
+    const buffer = req.file.buffer || (req.file.path ? fs.readFileSync(req.file.path) : null);
+    if (!buffer) {
+      return res.status(400).json({ success: false, message: 'Invalid or empty photo buffer.' });
+    }
+
+    const ext = path.extname(req.file.originalname || '') || '.jpg';
+    const filename = req.file.filename || `campus-${school.id}-${Date.now()}${ext}`;
+    const photoUrl = await webdavService.uploadFile('schools', filename, buffer, req.file.mimetype || 'image/jpeg');
 
     photos.push(photoUrl);
 
@@ -1012,6 +1037,56 @@ const uploadCampusPhoto = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: 'Failed to upload campus photo.'
+    });
+  }
+};
+
+// POST /api/v1/school/add-campus-link
+// Adds external image URLs with NO limit
+const addCampusPhotoLink = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { url } = req.body;
+    if (!url || typeof url !== 'string' || !url.trim().match(/^https?:\/\/.+/i)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide a valid image URL starting with http:// or https://'
+      });
+    }
+    const cleanUrl = url.trim();
+
+    const schoolRows = await query('SELECT id, campus_photos FROM school_profiles WHERE user_id = ?', [userId]);
+    if (schoolRows.length === 0) {
+      return res.status(404).json({ success: false, message: 'School profile not found.' });
+    }
+
+    const school = schoolRows[0];
+    let photos = [];
+    try {
+      photos = typeof school.campus_photos === 'string' ? JSON.parse(school.campus_photos || '[]') : (school.campus_photos || []);
+      if (!Array.isArray(photos)) photos = [];
+    } catch (_) {
+      photos = [];
+    }
+
+    // Unlimited external links allowed!
+    photos.push(cleanUrl);
+
+    await query('UPDATE school_profiles SET campus_photos = ? WHERE id = ?', [JSON.stringify(photos), school.id]);
+
+    return res.status(200).json({
+      success: true,
+      message: 'External campus photo link added successfully!',
+      data: {
+        photoUrl: cleanUrl,
+        campusPhotos: photos
+      }
+    });
+  } catch (error) {
+    console.error('addCampusPhotoLink Error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to add campus photo link.'
     });
   }
 };
@@ -1040,9 +1115,10 @@ const deleteCampusPhoto = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Invalid photo index specified.' });
     }
 
-    const removedUrl = photos.splice(photoIndex, 1)[0];
+    const removedItem = photos.splice(photoIndex, 1)[0];
+    const removedUrl = typeof removedItem === 'string' ? removedItem : (removedItem?.url || '');
 
-    if (removedUrl) {
+    if (removedUrl && isServerUpload(removedUrl)) {
       webdavService.deleteByUrl(removedUrl).catch((e) => console.warn('Campus photo cleanup notice:', e.message));
     }
 
@@ -1082,6 +1158,7 @@ module.exports = {
   getSchoolInquiries,
   updateInquiryStatus,
   uploadCampusPhoto,
+  addCampusPhotoLink,
   deleteCampusPhoto
 };
 

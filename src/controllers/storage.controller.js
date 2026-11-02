@@ -47,9 +47,10 @@ const uploadFile = async (req, res) => {
     const rawBase64 = req.body?.base64 || req.body?.bufferBase64 || req.body?.image;
 
     if (req.file) {
-      fileBuffer = req.file.buffer || fs.readFileSync(req.file.path);
-      filename = req.file.filename || `${subfolder}-${Date.now()}-${Math.round(Math.random() * 1e6)}${path.extname(req.file.originalname)}`;
-      mimeType = req.file.mimetype;
+      fileBuffer = req.file.buffer || (req.file.path ? fs.readFileSync(req.file.path) : null);
+      const ext = path.extname(req.file.originalname || '') || '.jpg';
+      filename = req.file.filename || `${subfolder}-${Date.now()}-${Math.round(Math.random() * 1e6)}${ext}`;
+      mimeType = req.file.mimetype || 'application/octet-stream';
     } else if (rawBase64 && typeof rawBase64 === 'string') {
       const commaIdx = rawBase64.indexOf(',');
       let base64Content = rawBase64;

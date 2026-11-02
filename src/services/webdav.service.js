@@ -50,13 +50,17 @@ class WebDAVService {
    * @returns {Promise<string>} Relative URL path e.g. '/uploads/avatars/avatar-123.jpg'
    */
   async uploadFile(subfolder, filename, buffer, mimeType = 'application/octet-stream') {
-    // 1. Save to local disk cache immediately
-    const folderPath = path.join(this.localUploadDir, subfolder);
-    if (!fs.existsSync(folderPath)) {
-      fs.mkdirSync(folderPath, { recursive: true });
+    // 1. Save to local disk cache (best effort - never fail request if disk permissions restricted)
+    try {
+      const folderPath = path.join(this.localUploadDir, subfolder);
+      if (!fs.existsSync(folderPath)) {
+        fs.mkdirSync(folderPath, { recursive: true });
+      }
+      const localFilePath = path.join(folderPath, filename);
+      fs.writeFileSync(localFilePath, buffer);
+    } catch (cacheErr) {
+      console.warn(`[WebDAVService] Local cache notice (write skipped): ${cacheErr.message}`);
     }
-    const localFilePath = path.join(folderPath, filename);
-    fs.writeFileSync(localFilePath, buffer);
 
     // 2. Upload to Nextcloud WebDAV
     const remoteUrl = `${this.baseUrl}/${subfolder}/${filename}`;

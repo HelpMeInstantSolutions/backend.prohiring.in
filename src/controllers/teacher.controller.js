@@ -287,8 +287,13 @@ const uploadAvatar = async (req, res) => {
     const oldAvatarUrl = existingRows[0]?.avatar_url;
 
     if (req.file) {
-      const buffer = fs.readFileSync(req.file.path);
-      avatarUrl = await webdavService.uploadFile('avatars', req.file.filename, buffer, req.file.mimetype);
+      const buffer = req.file.buffer || (req.file.path ? fs.readFileSync(req.file.path) : null);
+      if (!buffer) {
+        return res.status(400).json({ success: false, message: 'Invalid or empty avatar file provided.' });
+      }
+      const ext = path.extname(req.file.originalname || '') || '.jpg';
+      const filename = req.file.filename || `avatar-${userId}-${Date.now()}${ext}`;
+      avatarUrl = await webdavService.uploadFile('avatars', filename, buffer, req.file.mimetype || 'image/jpeg');
     } else if (req.body.avatarBase64) {
       const base64Data = req.body.avatarBase64.replace(/^data:image\/\w+;base64,/, '');
       const buffer = Buffer.from(base64Data, 'base64');
@@ -336,8 +341,13 @@ const uploadResume = async (req, res) => {
     const existingRows = await query('SELECT resume_url FROM teacher_profiles WHERE user_id = ?', [userId]);
     const oldResumeUrl = existingRows[0]?.resume_url;
 
-    const buffer = fs.readFileSync(req.file.path);
-    const resumeUrl = await webdavService.uploadFile('resumes', req.file.filename, buffer, req.file.mimetype);
+    const buffer = req.file.buffer || (req.file.path ? fs.readFileSync(req.file.path) : null);
+    if (!buffer) {
+      return res.status(400).json({ success: false, message: 'Invalid or empty resume file.' });
+    }
+    const ext = path.extname(req.file.originalname || '') || '.pdf';
+    const filename = req.file.filename || `resume-${userId}-${Date.now()}${ext}`;
+    const resumeUrl = await webdavService.uploadFile('resumes', filename, buffer, req.file.mimetype || 'application/pdf');
     await query('UPDATE teacher_profiles SET resume_url = ? WHERE user_id = ?', [resumeUrl, userId]);
 
     // Clean up old resume from disk & WebDAV

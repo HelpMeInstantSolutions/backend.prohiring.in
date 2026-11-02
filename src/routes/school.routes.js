@@ -28,6 +28,7 @@ router.put('/profile', schoolController.updateProfile);
 router.post('/upload-logo', upload.single('logo'), schoolController.uploadLogo);
 router.post('/upload-banner', upload.single('banner'), schoolController.uploadBanner);
 router.post('/upload-campus-photo', upload.single('photo'), schoolController.uploadCampusPhoto);
+router.post('/add-campus-link', schoolController.addCampusPhotoLink);
 router.delete('/campus-photos/:index', schoolController.deleteCampusPhoto);
 router.get('/dashboard', schoolController.getSchoolDashboard);
 
