@@ -231,15 +231,16 @@ async function autoMigrateColumns() {
       }
     }
 
-    // 4. Notifications table
+    // 4. Notifications table & column assurance
     await pool.query(`
       CREATE TABLE IF NOT EXISTS \`notifications\` (
         \`id\` INT AUTO_INCREMENT PRIMARY KEY,
         \`user_id\` INT NOT NULL,
-        \`type\` VARCHAR(50) NOT NULL,
-        \`title\` VARCHAR(255) NOT NULL,
+        \`type\` VARCHAR(50) NOT NULL DEFAULT 'info',
+        \`title\` VARCHAR(255) NOT NULL DEFAULT 'Notification',
         \`message\` TEXT NOT NULL,
         \`data\` LONGTEXT DEFAULT NULL,
+        \`link\` VARCHAR(255) DEFAULT NULL,
         \`is_read\` BOOLEAN DEFAULT 0,
         \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         INDEX \`idx_user_read\` (\`user_id\`, \`is_read\`),
@@ -248,7 +249,49 @@ async function autoMigrateColumns() {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     `);
 
-    // 5. User Devices table for Android FCM push notification tokens
+    const notifCols = [
+      ['type', "VARCHAR(50) NOT NULL DEFAULT 'info'"],
+      ['title', "VARCHAR(255) NOT NULL DEFAULT 'Notification'"],
+      ['message', 'TEXT DEFAULT NULL'],
+      ['data', 'LONGTEXT DEFAULT NULL'],
+      ['link', 'VARCHAR(255) DEFAULT NULL'],
+      ['is_read', 'BOOLEAN DEFAULT 0'],
+      ['created_at', 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP']
+    ];
+    for (const [colName, colDef] of notifCols) {
+      const [existing] = await pool.query(
+        `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS 
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'notifications' AND COLUMN_NAME = ?`,
+        [colName]
+      );
+      if (existing.length === 0) {
+        console.log(`[Auto-Migrate] Adding column '${colName}' to notifications...`);
+        await pool.query(`ALTER TABLE \`notifications\` ADD COLUMN \`${colName}\` ${colDef};`);
+      }
+    }
+
+    // 5. Job applications table & column assurance
+    const appCols = [
+      ['cover_note', 'TEXT DEFAULT NULL'],
+      ['status', "VARCHAR(50) DEFAULT 'applied'"],
+      ['interview_date', 'DATETIME DEFAULT NULL'],
+      ['interview_notes', 'TEXT DEFAULT NULL'],
+      ['applied_at', 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP'],
+      ['created_at', 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP']
+    ];
+    for (const [colName, colDef] of appCols) {
+      const [existing] = await pool.query(
+        `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS 
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'job_applications' AND COLUMN_NAME = ?`,
+        [colName]
+      );
+      if (existing.length === 0) {
+        console.log(`[Auto-Migrate] Adding column '${colName}' to job_applications...`);
+        await pool.query(`ALTER TABLE \`job_applications\` ADD COLUMN \`${colName}\` ${colDef};`);
+      }
+    }
+
+    // 6. User Devices table for Android FCM push notification tokens
     await pool.query(`
       CREATE TABLE IF NOT EXISTS \`user_devices\` (
         \`id\` INT AUTO_INCREMENT PRIMARY KEY,

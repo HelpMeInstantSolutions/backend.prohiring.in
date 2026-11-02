@@ -20,12 +20,30 @@ class NotificationService {
       if (!userId || !title || !message) return null;
 
       const serializedData = typeof data === 'object' ? JSON.stringify(data) : (data || '{}');
+      const directLink = data?.link || null;
 
-      const result = await query(
-        `INSERT INTO notifications (user_id, type, title, message, data, is_read, created_at)
-         VALUES (?, ?, ?, ?, ?, 0, NOW())`,
-        [userId, type, title.trim(), message.trim(), serializedData]
-      );
+      let result;
+      try {
+        result = await query(
+          `INSERT INTO notifications (user_id, type, title, message, data, link, is_read, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, 0, NOW())`,
+          [userId, type, title.trim(), message.trim(), serializedData, directLink]
+        );
+      } catch (_) {
+        try {
+          result = await query(
+            `INSERT INTO notifications (user_id, type, title, message, data, is_read, created_at)
+             VALUES (?, ?, ?, ?, ?, 0, NOW())`,
+            [userId, type, title.trim(), message.trim(), serializedData]
+          );
+        } catch (_2) {
+          result = await query(
+            `INSERT INTO notifications (user_id, title, message, type)
+             VALUES (?, ?, ?, ?)`,
+            [userId, title.trim(), message.trim(), type]
+          );
+        }
+      }
 
       const notificationId = result.insertId;
 

@@ -429,66 +429,53 @@ const getJobApplicants = async (req, res) => {
 
     const sql = `
       SELECT 
-        a.id,
-        a.id as application_id, 
-        a.status,
-        a.status as application_status, 
-        a.cover_note, 
-        a.applied_at, 
-        a.interview_date, 
-        a.interview_notes,
+        a.id as application_id,
+        a.*,
+        t.id as teacher_profile_id,
+        t.*,
         COALESCE(t.id, a.teacher_id) as teacher_id, 
+        COALESCE(t.full_name, u.email, 'Candidate') as candidate_name, 
         COALESCE(t.full_name, u.email, 'Candidate') as full_name, 
-        COALESCE(t.full_name, u.email, 'Candidate') as candidate_name,
+        COALESCE(t.phone, u.phone, '') as candidate_phone, 
         COALESCE(t.phone, u.phone, '') as phone, 
-        COALESCE(t.phone, u.phone, '') as candidate_phone,
-        t.highest_qualification, 
-        t.specialization,
-        t.experience_years, 
-        t.primary_subject, 
-        t.secondary_subjects, 
-        t.designation,
-        t.post_type,
-        COALESCE(t.post_type, t.designation, '') as teaching_levels,
-        t.current_city, 
-        t.current_state, 
-        t.gender, 
-        t.dob, 
-        t.headline, 
-        t.headline as candidate_headline,
-        t.bio,
-        t.qualifications_data, 
-        t.previous_jobs_data, 
-        t.current_job_data, 
-        t.tet_details,
-        t.expected_salary_min, 
-        t.expected_salary_max, 
-        t.resume_url, 
-        t.avatar_url,
-        COALESCE(u.email, '') as teacher_email,
-        COALESCE(u.email, '') as candidate_email
+        COALESCE(u.email, '') as candidate_email,
+        COALESCE(u.email, '') as teacher_email
       FROM job_applications a
       LEFT JOIN teacher_profiles t ON (a.teacher_id = t.id OR a.teacher_id = t.user_id)
       LEFT JOIN users u ON (t.user_id = u.id OR a.teacher_id = u.id)
       WHERE a.job_id = ?
-      ORDER BY a.applied_at DESC
+      ORDER BY a.id DESC
     `;
 
-    const applicants = await query(sql, [jobId]);
+    const rawRows = await query(sql, [jobId]);
+
+    const applicants = (rawRows || []).map((r) => ({
+      ...r,
+      id: r.application_id || r.id,
+      application_id: r.application_id || r.id,
+      status: r.status || 'applied',
+      application_status: r.status || 'applied',
+      applied_at: r.applied_at || r.created_at || new Date().toISOString(),
+      candidate_name: r.candidate_name || r.full_name || 'Candidate',
+      candidate_headline: r.headline || r.highest_qualification || 'Educator',
+      teaching_levels: r.teaching_levels || r.post_type || r.designation || '',
+      candidate_email: r.candidate_email || r.teacher_email || '',
+      candidate_phone: r.candidate_phone || r.phone || ''
+    }));
 
     return res.status(200).json({
       success: true,
       data: {
         job: jobCheck[0],
-        applicants: applicants || [],
-        totalApplicants: (applicants || []).length
+        applicants,
+        totalApplicants: applicants.length
       }
     });
   } catch (error) {
     console.error('getJobApplicants Error:', error);
     return res.status(500).json({
       success: false,
-      message: 'Failed to retrieve applicants.'
+      message: 'Failed to retrieve applicants: ' + error.message
     });
   }
 };

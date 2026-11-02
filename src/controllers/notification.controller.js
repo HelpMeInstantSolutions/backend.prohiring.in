@@ -6,31 +6,37 @@ const getNotifications = async (req, res) => {
     const userId = req.user.id;
     const userRole = req.user.role;
 
-    // 1. Fetch persisted user notifications from DB
-    const rows = await query(
-      `SELECT id, user_id, type, title, message, data, is_read, created_at 
-       FROM notifications 
-       WHERE user_id = ? 
-       ORDER BY created_at DESC 
-       LIMIT 40`,
-      [userId]
-    );
+    // 1. Fetch persisted user notifications from DB using resilient SELECT *
+    let rows = [];
+    try {
+      rows = await query(
+        `SELECT * FROM notifications WHERE user_id = ? ORDER BY id DESC LIMIT 40`,
+        [userId]
+      );
+    } catch (dbErr) {
+      console.warn('Notifications DB query notice:', dbErr.message);
+      rows = [];
+    }
 
-    const notifications = rows.map((r) => {
+    const notifications = (rows || []).map((r) => {
       let parsedData = {};
       try {
-        parsedData = typeof r.data === 'string' ? JSON.parse(r.data || '{}') : (r.data || {});
+        if (r.data) {
+          parsedData = typeof r.data === 'string' ? JSON.parse(r.data || '{}') : (r.data || {});
+        } else if (r.link) {
+          parsedData = { link: r.link };
+        }
       } catch (_) {
-        parsedData = {};
+        parsedData = r.link ? { link: r.link } : {};
       }
       return {
         id: r.id,
-        type: r.type,
-        title: r.title,
-        message: r.message,
+        type: r.type || 'info',
+        title: r.title || 'Notification',
+        message: r.message || '',
         data: parsedData,
         isRead: Boolean(r.is_read),
-        createdAt: r.created_at
+        createdAt: r.created_at || new Date().toISOString()
       };
     });
 
@@ -128,7 +134,7 @@ const getNotifications = async (req, res) => {
     console.error('getNotifications Error:', error);
     return res.status(500).json({
       success: false,
-      message: 'Failed to retrieve notifications.'
+      message: 'Failed to retrieve notifications: ' + error.message
     });
   }
 };
