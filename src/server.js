@@ -143,7 +143,9 @@ async function autoMigrateColumns() {
       ['latitude', 'DECIMAL(10, 8) DEFAULT NULL'],
       ['longitude', 'DECIMAL(11, 8) DEFAULT NULL'],
       ['preferred_location', 'TEXT DEFAULT NULL'],
-      ['teaching_levels', 'VARCHAR(255) DEFAULT NULL']
+      ['teaching_levels', 'VARCHAR(255) DEFAULT NULL'],
+      ['is_open_to_work', 'TINYINT(1) DEFAULT 1'],
+      ['slug', 'VARCHAR(150) DEFAULT NULL']
     ];
 
     for (const [colName, colDef] of columnsToEnsure) {
@@ -157,6 +159,13 @@ async function autoMigrateColumns() {
         await pool.query(`ALTER TABLE \`teacher_profiles\` ADD COLUMN \`${colName}\` ${colDef};`);
       }
     }
+
+    // Auto-populate slug for existing teacher profiles if empty
+    await pool.query(
+      `UPDATE teacher_profiles 
+       SET slug = CONCAT(LOWER(REGEXP_REPLACE(COALESCE(full_name, 'educator'), '[^a-zA-Z0-9]+', '-')), '-', id) 
+       WHERE slug IS NULL OR slug = ''`
+    ).catch((e) => console.warn('Teacher slug migration notice:', e.message));
 
     // 2. School profile rich fields & location
     const schoolColumnsToEnsure = [

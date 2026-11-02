@@ -3,6 +3,16 @@ const fs = require('fs');
 const { query } = require('../config/database');
 const notificationService = require('../services/notification.service');
 
+// Helper to generate clean SEO slug for teacher profiles
+const generateTeacherSlug = (fullName, teacherId) => {
+  const base = (fullName || 'educator')
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return `${base || 'educator'}-${teacherId}`;
+};
+
 // GET /api/v1/teacher/profile
 const getProfile = async (req, res) => {
   try {
@@ -25,10 +35,18 @@ const getProfile = async (req, res) => {
       try { return JSON.parse(val); } catch (e) { return null; }
     };
 
+    let slug = row.slug;
+    if (!slug) {
+      slug = generateTeacherSlug(row.full_name, row.id);
+      await query('UPDATE teacher_profiles SET slug = ? WHERE id = ?', [slug, row.id]).catch(() => {});
+    }
+
     return res.status(200).json({
       success: true,
       data: {
         ...row,
+        slug,
+        isOpenToWork: row.is_open_to_work === 1 || row.is_open_to_work === null || row.is_open_to_work === undefined,
         family_details: safeParse(row.family_details),
         qualifications_data: safeParse(row.qualifications_data),
         previous_jobs_data: safeParse(row.previous_jobs_data),
@@ -141,6 +159,20 @@ const updateProfile = async (req, res) => {
     );
 
     const updated = await query('SELECT * FROM teacher_profiles WHERE user_id = ?', [userId]);
+
+    // Update Open to Work status if provided
+    const openToWorkVal = req.body.isOpenToWork !== undefined ? req.body.isOpenToWork : req.body.is_open_to_work;
+    if (openToWorkVal !== undefined) {
+      await query('UPDATE teacher_profiles SET is_open_to_work = ? WHERE user_id = ?', [openToWorkVal ? 1 : 0, userId]);
+      if (updated.length > 0) updated[0].is_open_to_work = openToWorkVal ? 1 : 0;
+    }
+
+    // Ensure slug is assigned
+    if (updated.length > 0 && (!updated[0].slug || updated[0].slug.trim() === '')) {
+      const generatedSlug = generateTeacherSlug(updated[0].full_name, updated[0].id);
+      await query('UPDATE teacher_profiles SET slug = ? WHERE id = ?', [generatedSlug, updated[0].id]).catch(() => {});
+      updated[0].slug = generatedSlug;
+    }
 
     // Save user-entered qualifications into qualification_suggestions for community autocomplete
     if (Array.isArray(qualificationsData)) {
@@ -604,7 +636,11 @@ const getTeacherDashboard = async (req, res) => {
     return res.status(200).json({
       success: true,
       data: {
-        profile: teacher,
+        profile: {
+          ...teacher,
+          isOpenToWork: teacher.is_open_to_work === 1 || teacher.is_open_to_work === null || teacher.is_open_to_work === undefined,
+          slug: teacher.slug || generateTeacherSlug(teacher.full_name, teacher.id)
+        },
         stats: {
           totalApplied: appStats.total_applied || 0,
           totalShortlisted: appStats.total_shortlisted || 0,
@@ -776,15 +812,52 @@ const getNetworkJobs = async (req, res) => {
   }
 };
 
-// GET /api/v1/teacher/public/:id
+// PATCH /api/v1/teacher/open-to-work
+const toggleOpenToWork = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { isOpenToWork } = req.body;
+    let newStatus = null;
+    if (typeof isOpenToWork === 'boolean') {
+      newStatus = isOpenToWork ? 1 : 0;
+    }
+
+    if (newStatus !== null) {
+      await query('UPDATE teacher_profiles SET is_open_to_work = ? WHERE user_id = ?', [newStatus, userId]);
+    } else {
+      await query('UPDATE teacher_profiles SET is_open_to_work = IF(COALESCE(is_open_to_work, 1) = 1, 0, 1) WHERE user_id = ?', [userId]);
+    }
+
+    const rows = await query('SELECT id, full_name, is_open_to_work, slug FROM teacher_profiles WHERE user_id = ?', [userId]);
+    const updatedStatus = rows[0]?.is_open_to_work === 1;
+
+    return res.status(200).json({
+      success: true,
+      message: updatedStatus ? 'You are now marked as Open to Work!' : 'Profile visibility set to discreet mode.',
+      data: { isOpenToWork: updatedStatus }
+    });
+  } catch (error) {
+    console.error('toggleOpenToWork Error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to update job search status.' });
+  }
+};
+
+// GET /api/v1/teacher/public/:id (Accepts numeric ID or SEO slug)
 const getPublicTeacherProfile = async (req, res) => {
   try {
-    const teacherId = parseInt(req.params.id, 10);
-    const rows = await query('SELECT * FROM teacher_profiles WHERE id = ?', [teacherId]);
+    const identifier = req.params.id;
+    let rows = [];
+    if (/^\d+$/.test(identifier)) {
+      rows = await query('SELECT * FROM teacher_profiles WHERE id = ? OR slug = ?', [parseInt(identifier, 10), identifier]);
+    } else {
+      rows = await query('SELECT * FROM teacher_profiles WHERE slug = ?', [identifier]);
+    }
+
     if (rows.length === 0) {
       return res.status(404).json({ success: false, message: 'Teacher profile not found.' });
     }
     const t = rows[0];
+    const teacherId = t.id;
 
     const safeParse = (val) => {
       if (!val) return null;
@@ -810,7 +883,9 @@ const getPublicTeacherProfile = async (req, res) => {
       success: true,
       data: {
         id: t.id,
+        userId: t.user_id,
         fullName: t.full_name,
+        slug: t.slug || generateTeacherSlug(t.full_name, t.id),
         avatarUrl: t.avatar_url,
         postType: t.post_type,
         designation: t.designation,
@@ -822,6 +897,7 @@ const getPublicTeacherProfile = async (req, res) => {
         currentCity: t.current_city,
         currentState: t.current_state,
         bio: t.bio,
+        isOpenToWork: t.is_open_to_work === 1 || t.is_open_to_work === null || t.is_open_to_work === undefined,
         qualificationsData: safeParse(t.qualifications_data),
         previousJobsData: safeParse(t.previous_jobs_data),
         currentJobData: safeParse(t.current_job_data),
@@ -848,6 +924,7 @@ module.exports = {
   getTeacherDashboard,
   getQualificationSuggestions,
   getNetworkJobs,
-  getPublicTeacherProfile
+  getPublicTeacherProfile,
+  toggleOpenToWork
 };
 
