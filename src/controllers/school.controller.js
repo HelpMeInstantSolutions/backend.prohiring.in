@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { query } = require('../config/database');
 const webdavService = require('../services/webdav.service');
+const { dispatchEmail } = require('../services/otp.service');
 
 // GET /api/v1/school/profile
 const getProfile = async (req, res) => {
@@ -418,7 +419,9 @@ const getJobApplicants = async (req, res) => {
         a.id as application_id, a.status as application_status, a.cover_note, a.applied_at, 
         a.interview_date, a.interview_notes,
         t.id as teacher_id, t.full_name, t.phone, t.highest_qualification, t.specialization,
-        t.experience_years, t.primary_subject, t.current_city, t.current_state,
+        t.experience_years, t.primary_subject, t.secondary_subjects, t.teaching_levels,
+        t.current_city, t.current_state, t.gender, t.dob, t.headline, t.bio,
+        t.qualifications_data, t.previous_jobs_data, t.current_job_data, t.tet_details,
         t.expected_salary_min, t.expected_salary_max, t.resume_url, t.avatar_url,
         u.email as teacher_email
       FROM job_applications a
@@ -753,6 +756,282 @@ const getSchoolStaff = async (req, res) => {
   }
 };
 
+// POST /api/v1/school/:id/query
+const submitSchoolInquiry = async (req, res) => {
+  try {
+    const schoolParam = req.params.id;
+    const { senderName, senderEmail, senderPhone, subject, message } = req.body;
+
+    if (!senderName || !senderEmail || !message) {
+      return res.status(400).json({
+        success: false,
+        message: 'Name, email, and message are required to submit an inquiry.'
+      });
+    }
+
+    // Resolve school profile
+    let schoolRows = [];
+    if (/^\d+$/.test(schoolParam)) {
+      schoolRows = await query(
+        `SELECT sp.*, u.email as user_email 
+         FROM school_profiles sp 
+         JOIN users u ON sp.user_id = u.id 
+         WHERE sp.id = ?`,
+        [schoolParam]
+      );
+    } else {
+      schoolRows = await query(
+        `SELECT sp.*, u.email as user_email 
+         FROM school_profiles sp 
+         JOIN users u ON sp.user_id = u.id 
+         WHERE sp.slug = ? OR sp.id = ?`,
+        [schoolParam, schoolParam]
+      );
+    }
+
+    if (schoolRows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'School institution not found.'
+      });
+    }
+
+    const school = schoolRows[0];
+    const senderUserId = req.user ? req.user.id : null;
+    const senderRole = req.user ? req.user.role : 'visitor';
+
+    await query(
+      `INSERT INTO school_inquiries 
+       (school_id, sender_name, sender_email, sender_phone, subject, message, sender_role, sender_user_id, status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'unread')`,
+      [
+        school.id,
+        senderName.trim(),
+        senderEmail.trim(),
+        senderPhone ? senderPhone.trim() : null,
+        subject ? subject.trim() : 'General Inquiry',
+        message.trim(),
+        senderRole,
+        senderUserId
+      ]
+    );
+
+    // Dispatch email alert to school's registered email
+    const schoolEmail = school.user_email;
+    if (schoolEmail) {
+      try {
+        const emailSubject = `New Inquiry from ${senderName.trim()} - ProHiring`;
+        const emailHtml = `
+          <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #E2E8F0; border-radius: 16px; background-color: #FFFFFF;">
+            <div style="background: linear-gradient(135deg, #4F46E5 0%, #3730A3 100%); padding: 20px; border-radius: 12px; color: #FFFFFF; margin-bottom: 20px;">
+              <h2 style="margin: 0; font-size: 20px; font-weight: 700;">New Inquiry Received</h2>
+              <p style="margin: 4px 0 0 0; opacity: 0.9; font-size: 13px;">School: ${school.school_name}</p>
+            </div>
+            <div style="padding: 16px; background-color: #F8FAFC; border-radius: 8px; border: 1px solid #E2E8F0; margin-bottom: 20px;">
+              <p style="margin: 0 0 8px 0; font-size: 14px;"><strong>From:</strong> ${senderName.trim()} (${senderRole === 'teacher' ? 'Registered Teacher' : 'Platform Visitor'})</p>
+              <p style="margin: 0 0 8px 0; font-size: 14px;"><strong>Email:</strong> <a href="mailto:${senderEmail.trim()}">${senderEmail.trim()}</a></p>
+              ${senderPhone ? `<p style="margin: 0 0 8px 0; font-size: 14px;"><strong>Phone:</strong> ${senderPhone.trim()}</p>` : ''}
+              ${subject ? `<p style="margin: 0 0 8px 0; font-size: 14px;"><strong>Subject:</strong> ${subject.trim()}</p>` : ''}
+            </div>
+            <div style="padding: 16px; background-color: #FFFFFF; border-radius: 8px; border: 1px solid #E2E8F0; border-left: 4px solid #4F46E5; margin-bottom: 20px;">
+              <p style="margin: 0 0 4px 0; font-size: 12px; font-weight: 600; color: #64748B; text-transform: uppercase;">Message Content</p>
+              <p style="margin: 0; font-size: 14px; color: #1E293B; line-height: 1.6; white-space: pre-wrap;">${message.trim()}</p>
+            </div>
+            <p style="font-size: 12px; color: #64748B; margin: 0; text-align: center;">
+              You can review and manage this inquiry in your <a href="https://prohiring.in/school/dashboard" style="color: #4F46E5; font-weight: 600;">School Recruiter Dashboard</a>.
+            </p>
+          </div>
+        `;
+        await dispatchEmail(schoolEmail, null, emailSubject, emailHtml);
+      } catch (emailErr) {
+        console.warn('[School Inquiry] Failed to send email alert:', emailErr.message);
+      }
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'Your inquiry has been submitted successfully to the institution.'
+    });
+  } catch (error) {
+    console.error('submitSchoolInquiry Error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to submit inquiry. Please try again later.'
+    });
+  }
+};
+
+// GET /api/v1/school/inquiries
+const getSchoolInquiries = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const schoolRows = await query('SELECT id FROM school_profiles WHERE user_id = ?', [userId]);
+    if (schoolRows.length === 0) {
+      return res.status(404).json({ success: false, message: 'School profile not found.' });
+    }
+
+    const schoolId = schoolRows[0].id;
+    const inquiries = await query(
+      `SELECT * FROM school_inquiries WHERE school_id = ? ORDER BY created_at DESC`,
+      [schoolId]
+    );
+
+    const unreadCount = inquiries.filter((i) => i.status === 'unread').length;
+
+    return res.status(200).json({
+      success: true,
+      data: inquiries,
+      unreadCount
+    });
+  } catch (error) {
+    console.error('getSchoolInquiries Error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to retrieve inquiries.'
+    });
+  }
+};
+
+// PUT /api/v1/school/inquiries/:id/status
+const updateInquiryStatus = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const inquiryId = req.params.id;
+    const { status } = req.body;
+
+    const allowedStatuses = ['unread', 'read', 'replied', 'archived'];
+    if (!status || !allowedStatuses.includes(status)) {
+      return res.status(400).json({ success: false, message: 'Invalid inquiry status.' });
+    }
+
+    const schoolRows = await query('SELECT id FROM school_profiles WHERE user_id = ?', [userId]);
+    if (schoolRows.length === 0) {
+      return res.status(404).json({ success: false, message: 'School profile not found.' });
+    }
+
+    const schoolId = schoolRows[0].id;
+    await query(
+      `UPDATE school_inquiries SET status = ? WHERE id = ? AND school_id = ?`,
+      [status, inquiryId, schoolId]
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: 'Inquiry status updated successfully.'
+    });
+  } catch (error) {
+    console.error('updateInquiryStatus Error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to update inquiry status.'
+    });
+  }
+};
+
+// POST /api/v1/school/upload-campus-photo
+const uploadCampusPhoto = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    if (!req.file) {
+      return res.status(400).json({ success: false, message: 'No photo image provided.' });
+    }
+
+    const schoolRows = await query('SELECT id, campus_photos FROM school_profiles WHERE user_id = ?', [userId]);
+    if (schoolRows.length === 0) {
+      return res.status(404).json({ success: false, message: 'School profile not found.' });
+    }
+
+    const school = schoolRows[0];
+    let photos = [];
+    try {
+      photos = typeof school.campus_photos === 'string' ? JSON.parse(school.campus_photos || '[]') : (school.campus_photos || []);
+      if (!Array.isArray(photos)) photos = [];
+    } catch (_) {
+      photos = [];
+    }
+
+    if (photos.length >= 6) {
+      if (req.file.path && fs.existsSync(req.file.path)) {
+        fs.unlinkSync(req.file.path);
+      }
+      return res.status(400).json({
+        success: false,
+        message: 'Campus photo gallery is limited to a maximum of 6 photos. Please remove an existing photo to upload a new one.'
+      });
+    }
+
+    const buffer = fs.readFileSync(req.file.path);
+    const photoUrl = await webdavService.uploadFile('schools', req.file.filename, buffer, req.file.mimetype);
+
+    photos.push(photoUrl);
+
+    await query('UPDATE school_profiles SET campus_photos = ? WHERE id = ?', [JSON.stringify(photos), school.id]);
+
+    return res.status(200).json({
+      success: true,
+      message: 'Campus photo uploaded successfully.',
+      data: {
+        photoUrl,
+        campusPhotos: photos
+      }
+    });
+  } catch (error) {
+    console.error('uploadCampusPhoto Error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to upload campus photo.'
+    });
+  }
+};
+
+// DELETE /api/v1/school/campus-photos/:index
+const deleteCampusPhoto = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const photoIndex = parseInt(req.params.index, 10);
+
+    const schoolRows = await query('SELECT id, campus_photos FROM school_profiles WHERE user_id = ?', [userId]);
+    if (schoolRows.length === 0) {
+      return res.status(404).json({ success: false, message: 'School profile not found.' });
+    }
+
+    const school = schoolRows[0];
+    let photos = [];
+    try {
+      photos = typeof school.campus_photos === 'string' ? JSON.parse(school.campus_photos || '[]') : (school.campus_photos || []);
+      if (!Array.isArray(photos)) photos = [];
+    } catch (_) {
+      photos = [];
+    }
+
+    if (isNaN(photoIndex) || photoIndex < 0 || photoIndex >= photos.length) {
+      return res.status(400).json({ success: false, message: 'Invalid photo index specified.' });
+    }
+
+    const removedUrl = photos.splice(photoIndex, 1)[0];
+
+    if (removedUrl) {
+      webdavService.deleteByUrl(removedUrl).catch((e) => console.warn('Campus photo cleanup notice:', e.message));
+    }
+
+    await query('UPDATE school_profiles SET campus_photos = ? WHERE id = ?', [JSON.stringify(photos), school.id]);
+
+    return res.status(200).json({
+      success: true,
+      message: 'Campus photo deleted successfully.',
+      data: {
+        campusPhotos: photos
+      }
+    });
+  } catch (error) {
+    console.error('deleteCampusPhoto Error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to delete campus photo.'
+    });
+  }
+};
+
 module.exports = {
   getProfile,
   updateProfile,
@@ -766,6 +1045,11 @@ module.exports = {
   getSchoolDashboard,
   searchSchools,
   getPublicSchoolProfile,
-  getSchoolStaff
+  getSchoolStaff,
+  submitSchoolInquiry,
+  getSchoolInquiries,
+  updateInquiryStatus,
+  uploadCampusPhoto,
+  deleteCampusPhoto
 };
 

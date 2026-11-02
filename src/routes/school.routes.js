@@ -18,16 +18,22 @@ const optionalAuth = (req, res, next) => {
 router.get('/search', schoolController.searchSchools);
 router.get('/public/:id', optionalAuth, schoolController.getPublicSchoolProfile);
 router.get('/:id/staff', schoolController.getSchoolStaff);
+router.post('/:id/query', optionalAuth, schoolController.submitSchoolInquiry);
 
 // All routes below require school role
 router.use(authenticate, authorize('school'));
 
 router.get('/profile', schoolController.getProfile);
-
 router.put('/profile', schoolController.updateProfile);
 router.post('/upload-logo', upload.single('logo'), schoolController.uploadLogo);
 router.post('/upload-banner', upload.single('banner'), schoolController.uploadBanner);
+router.post('/upload-campus-photo', upload.single('photo'), schoolController.uploadCampusPhoto);
+router.delete('/campus-photos/:index', schoolController.deleteCampusPhoto);
 router.get('/dashboard', schoolController.getSchoolDashboard);
+
+// Inquiries / Queries received by school
+router.get('/inquiries', schoolController.getSchoolInquiries);
+router.put('/inquiries/:id/status', schoolController.updateInquiryStatus);
 
 // Vacancies management
 router.post('/jobs', schoolController.postJob);

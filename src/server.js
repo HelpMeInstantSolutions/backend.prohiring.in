@@ -618,6 +618,30 @@ async function autoMigrateColumns() {
       console.warn('[Auto-Migrate] Jobs share_code alter warning:', jErr.message);
     }
 
+    // Ensure school_inquiries table exists for public queries and messages
+    try {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS \`school_inquiries\` (
+          \`id\` INT AUTO_INCREMENT PRIMARY KEY,
+          \`school_id\` INT NOT NULL,
+          \`sender_name\` VARCHAR(150) NOT NULL,
+          \`sender_email\` VARCHAR(150) NOT NULL,
+          \`sender_phone\` VARCHAR(25) DEFAULT NULL,
+          \`subject\` VARCHAR(255) DEFAULT NULL,
+          \`message\` TEXT NOT NULL,
+          \`sender_role\` VARCHAR(50) DEFAULT 'visitor',
+          \`sender_user_id\` INT DEFAULT NULL,
+          \`status\` ENUM('unread', 'read', 'replied', 'archived') DEFAULT 'unread',
+          \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          INDEX \`idx_inquiries_school\` (\`school_id\`, \`created_at\` DESC),
+          FOREIGN KEY (\`school_id\`) REFERENCES \`school_profiles\` (\`id\`) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+      `);
+      console.log('[Auto-Migrate] school_inquiries table verified.');
+    } catch (inqErr) {
+      console.warn('[Auto-Migrate] school_inquiries table warning:', inqErr.message);
+    }
+
     console.log('[Auto-Migrate] Teacher profile columns, suggestions, system_settings, and posts/designations taxonomy verified.');
   } catch (err) {
     console.warn('[Auto-Migrate] Column check warning:', err.message);
