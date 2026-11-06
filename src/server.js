@@ -886,6 +886,14 @@ Key Highlights:
       console.warn('[Auto-Seed] Insight Classes seed notice:', seedErr.message);
     }
 
+    // Auto-seed Asian Public School Umra & 8 Vacancies
+    try {
+      const seedAsianPublicSchool = require('./database/seed_asian_public_school');
+      await seedAsianPublicSchool();
+    } catch (seedAsianErr) {
+      console.warn('[Auto-Seed] Asian Public School seed notice:', seedAsianErr.message);
+    }
+
     // Ensure school_inquiries table exists for public queries and messages
     try {
       await pool.query(`

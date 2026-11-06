@@ -3,6 +3,19 @@ const jwt = require('jsonwebtoken');
 const { query, getTransactionConnection } = require('../config/database');
 const { dispatchSms, dispatchEmail, sanitizePhone } = require('../services/otp.service');
 
+const formatIndianPhone = (phone) => {
+  if (!phone) return null;
+  const cleaned = String(phone).replace(/[^\d]/g, '');
+  if (cleaned.length === 10) {
+    return `+91 ${cleaned}`;
+  }
+  if (cleaned.length === 12 && cleaned.startsWith('91')) {
+    return `+91 ${cleaned.slice(2)}`;
+  }
+  if (String(phone).startsWith('+')) return String(phone).trim();
+  return cleaned ? `+${cleaned}` : null;
+};
+
 const generateToken = (user) => {
   const secret = process.env.JWT_SECRET || 'prohiring_super_secure_jwt_secret_key_2026_change_in_production';
   const expiresIn = process.env.JWT_EXPIRES_IN || '7d';
@@ -214,20 +227,6 @@ const registerTeacher = async (req, res) => {
     );
 
     const userId = userResult.insertId;
-
-function formatIndianPhone(phone) {
-  if (!phone) return null;
-  const cleaned = String(phone).replace(/[^\d]/g, '');
-  if (cleaned.length === 10) {
-    return `+91 ${cleaned}`;
-  }
-  if (cleaned.length === 12 && cleaned.startsWith('91')) {
-    return `+91 ${cleaned.slice(2)}`;
-  }
-  if (String(phone).startsWith('+')) return String(phone).trim();
-  return cleaned ? `+${cleaned}` : null;
-}
-
     const formattedTeacherPhone = formatIndianPhone(phone);
 
     await connection.execute(

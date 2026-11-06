@@ -8,7 +8,8 @@
     "dev": "nodemon src/server.js",
     "db:migrate": "node src/database/migrate.js",
     "db:seed": "node src/database/seed.js",
-    "db:seed:insight": "node src/database/seed_insight_job.js"
+    "db:seed:insight": "node src/database/seed_insight_job.js",
+    "db:seed:asian": "node src/database/seed_asian_public_school.js"
   },
   "keywords": [
     "prohiring",
