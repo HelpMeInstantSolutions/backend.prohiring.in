@@ -97,7 +97,8 @@ async function runMigration() {
       ['poster_url', 'VARCHAR(255) DEFAULT NULL'],
       ['post_type', "VARCHAR(100) DEFAULT 'Teaching Staff'"],
       ['interview_time', 'VARCHAR(150) DEFAULT NULL'],
-      ['venue', 'TEXT DEFAULT NULL']
+      ['venue', 'TEXT DEFAULT NULL'],
+      ['slug', 'VARCHAR(150) DEFAULT NULL']
     ];
 
     for (const [colName, colDef] of jobColumnsToEnsure) {
@@ -114,6 +115,15 @@ async function runMigration() {
       } catch (err) {
         console.warn(`Could not check or add column ${colName} to jobs:`, err.message);
       }
+    }
+
+    // Set custom vanity slug for Insight Classes PGT Chemistry vacancy
+    try {
+      await connection.query(
+        "UPDATE `jobs` SET `slug` = 'icb-chem' WHERE `id` = 4 OR `title` LIKE '%PGT Chemistry%'"
+      );
+    } catch (slugSetErr) {
+      console.warn('Notice setting icb-chem slug:', slugSetErr.message);
     }
 
     // Backfill school slugs if empty

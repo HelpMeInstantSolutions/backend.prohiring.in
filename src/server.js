@@ -776,6 +776,20 @@ async function autoMigrateColumns() {
       console.warn('[Auto-Migrate] Jobs venue column warning:', vErr.message);
     }
 
+    try {
+      const [slugColExisting] = await pool.query(
+        `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS 
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'jobs' AND COLUMN_NAME = 'slug'`
+      );
+      if (slugColExisting.length === 0) {
+        await pool.query("ALTER TABLE `jobs` ADD COLUMN `slug` VARCHAR(150) DEFAULT NULL, ADD INDEX `idx_jobs_slug` (`slug`)");
+        console.log('[Auto-Migrate] Added slug column to jobs.');
+      }
+      await pool.query("UPDATE `jobs` SET `slug` = 'icb-chem' WHERE `id` = 4 OR `title` LIKE '%PGT Chemistry%'");
+    } catch (sColErr) {
+      console.warn('[Auto-Migrate] Jobs slug column warning:', sColErr.message);
+    }
+
     // Auto-seed Insight Classes Bhiwani & PGT Chemistry job with flyer
     try {
       const bcrypt = require('bcryptjs');

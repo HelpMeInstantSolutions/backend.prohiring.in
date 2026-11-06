@@ -185,20 +185,36 @@ const getJobById = async (req, res) => {
   try {
     const jobId = req.params.id;
 
-    const sql = `
-      SELECT 
-        j.*,
-        s.school_name, s.logo_url as school_logo, s.banner_url as school_banner,
-        s.board, s.website as school_website, s.about as school_about, 
-        s.city as school_city, s.state as school_state, s.is_verified, s.slug as school_slug,
-        s.latitude as school_latitude, s.longitude as school_longitude,
-        s.address as school_address, s.maps_url as school_maps_url
-      FROM jobs j
-      JOIN school_profiles s ON j.school_id = s.id
-      WHERE j.id = ? OR j.share_code = ?
-    `;
-
-    const rows = await query(sql, [jobId, jobId]);
+    let rows;
+    try {
+      const sql = `
+        SELECT 
+          j.*,
+          s.school_name, s.logo_url as school_logo, s.banner_url as school_banner,
+          s.board, s.website as school_website, s.about as school_about, 
+          s.city as school_city, s.state as school_state, s.is_verified, s.slug as school_slug,
+          s.latitude as school_latitude, s.longitude as school_longitude,
+          s.address as school_address, s.maps_url as school_maps_url
+        FROM jobs j
+        JOIN school_profiles s ON j.school_id = s.id
+        WHERE j.id = ? OR j.share_code = ? OR j.slug = ?
+      `;
+      rows = await query(sql, [jobId, jobId, jobId]);
+    } catch (_) {
+      const fallbackSql = `
+        SELECT 
+          j.*,
+          s.school_name, s.logo_url as school_logo, s.banner_url as school_banner,
+          s.board, s.website as school_website, s.about as school_about, 
+          s.city as school_city, s.state as school_state, s.is_verified, s.slug as school_slug,
+          s.latitude as school_latitude, s.longitude as school_longitude,
+          s.address as school_address, s.maps_url as school_maps_url
+        FROM jobs j
+        JOIN school_profiles s ON j.school_id = s.id
+        WHERE j.id = ? OR j.share_code = ?
+      `;
+      rows = await query(fallbackSql, [jobId, jobId]);
+    }
     if (rows.length === 0) {
       return res.status(404).json({
         success: false,
