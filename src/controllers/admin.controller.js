@@ -3,6 +3,7 @@ const jwt = require('jsonwebtoken');
 const { query } = require('../config/database');
 const webdavService = require('../services/webdav.service');
 const { sendAccountCredentialsEmail } = require('../services/otp.service');
+const { expireOldJobs } = require('../services/jobExpiry.service');
 
 const generateToken = (user) => {
   const secret = process.env.JWT_SECRET || 'prohiring_super_secure_jwt_secret_key_2026_change_in_production';
@@ -279,6 +280,9 @@ const toggleUserStatus = async (req, res) => {
 // GET /api/v1/admin/jobs
 const getAllJobs = async (req, res) => {
   try {
+    // Run auto-expiration check to keep vacancy states accurate
+    await expireOldJobs();
+
     const { search, status, page = 1, limit = 20 } = req.query;
     const offset = (parseInt(page, 10) - 1) * parseInt(limit, 10);
 
@@ -353,6 +357,106 @@ const deleteJob = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: 'Failed to delete job.'
+    });
+  }
+};
+
+// GET /api/v1/admin/jobs/settings - Retrieve vacancy auto-expiration settings
+const getJobSettings = async (req, res) => {
+  try {
+    const rows = await query(
+      "SELECT setting_value FROM system_settings WHERE setting_key = 'job_auto_expire_days' LIMIT 1"
+    );
+    const autoExpireDays = rows.length > 0 ? (parseInt(rows[0].setting_value, 10) || 15) : 15;
+    return res.status(200).json({
+      success: true,
+      data: {
+        autoExpireDays
+      }
+    });
+  } catch (error) {
+    console.error('getJobSettings Error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to retrieve job settings.'
+    });
+  }
+};
+
+// PUT /api/v1/admin/jobs/settings - Update vacancy auto-expiration duration
+const updateJobSettings = async (req, res) => {
+  try {
+    const { autoExpireDays } = req.body;
+    const days = parseInt(autoExpireDays, 10);
+    if (isNaN(days) || days < 1) {
+      return res.status(400).json({
+        success: false,
+        message: 'Auto-expiration period must be a valid number of days (at least 1).'
+      });
+    }
+
+    await query(
+      `INSERT INTO system_settings (setting_key, setting_value, category, description, is_public)
+       VALUES ('job_auto_expire_days', ?, 'recruitment', 'Number of days after which an active job posting automatically closes', 0)
+       ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)`,
+      [String(days)]
+    );
+
+    // Apply policy immediately
+    const affected = await expireOldJobs();
+
+    return res.status(200).json({
+      success: true,
+      message: `Job auto-closure period successfully set to ${days} days.${affected > 0 ? ` ${affected} overdue vacancies were closed.` : ''}`,
+      data: {
+        autoExpireDays: days
+      }
+    });
+  } catch (error) {
+    console.error('updateJobSettings Error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to update job settings.'
+    });
+  }
+};
+
+// PUT /api/v1/admin/jobs/:id/status - Admin toggles vacancy status (active, closed, draft)
+const updateJobStatus = async (req, res) => {
+  try {
+    const jobId = req.params.id;
+    const { status } = req.body;
+
+    const validStatuses = ['active', 'closed', 'draft'];
+    if (!status || !validStatuses.includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid status. Status must be "active", "closed", or "draft".'
+      });
+    }
+
+    // If reopening / reactivating an expired job, reset created_at so it receives a fresh lifecycle
+    if (status === 'active') {
+      await query(
+        'UPDATE jobs SET status = ?, created_at = NOW() WHERE id = ?',
+        [status, jobId]
+      );
+    } else {
+      await query(
+        'UPDATE jobs SET status = ? WHERE id = ?',
+        [status, jobId]
+      );
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: `Job vacancy status successfully changed to ${status}.`
+    });
+  } catch (error) {
+    console.error('updateJobStatus Error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to update job status.'
     });
   }
 };
@@ -1562,6 +1666,9 @@ module.exports = {
   toggleUserStatus,
   getAllJobs,
   deleteJob,
+  getJobSettings,
+  updateJobSettings,
+  updateJobStatus,
   getAdminTaxonomy,
   createCategory,
   updateCategory,

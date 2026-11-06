@@ -1,8 +1,12 @@
 const { query } = require('../config/database');
+const { expireOldJobs } = require('../services/jobExpiry.service');
 
 // GET /api/v1/jobs (Public with advanced filtering, GPS distance & pagination)
 const getPublicJobs = async (req, res) => {
   try {
+    // Run auto-expiration check
+    await expireOldJobs();
+
     const {
       search,
       subject,

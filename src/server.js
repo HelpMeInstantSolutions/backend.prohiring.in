@@ -17,6 +17,7 @@ const networkRoutes = require('./routes/network.routes');
 const communityRoutes = require('./routes/community.routes');
 const notificationRoutes = require('./routes/notification.routes');
 const { pool } = require('./config/database');
+const { expireOldJobs } = require('./services/jobExpiry.service');
 
 const app = express();
 
@@ -697,6 +698,12 @@ async function autoMigrateColumns() {
         SET \`is_public\` = 1 
         WHERE \`setting_key\` IN ('logo_url', 'favicon_url', 'app_name', 'app_tagline', 'brand_domain', 'primary_color', 'secondary_color', 'support_email', 'support_phone', 'whatsapp_enabled', 'whatsapp_number', 'whatsapp_message', 'whatsapp_position')
       `);
+
+      await pool.query(`
+        INSERT INTO \`system_settings\` (\`setting_key\`, \`setting_value\`, \`category\`, \`description\`, \`is_public\`)
+        VALUES ('job_auto_expire_days', '15', 'recruitment', 'Number of days after which an active job posting automatically closes', 0)
+        ON DUPLICATE KEY UPDATE \`setting_key\` = \`setting_key\`
+      `);
     } catch (sErr) {
       console.warn('[Auto-Migrate] System settings alter warning:', sErr.message);
     }
@@ -880,6 +887,12 @@ app.listen(PORT, async () => {
   console.log(` Health check: http://localhost:${PORT}/api/health`);
   console.log(`===============================================`);
   await autoMigrateColumns();
+  await expireOldJobs();
+
+  // Automatically check and expire overdue vacancies every 30 minutes
+  setInterval(() => {
+    expireOldJobs().catch((err) => console.warn('[Auto-Expire Cron Error]:', err.message));
+  }, 30 * 60 * 1000);
 });
 
 module.exports = app;

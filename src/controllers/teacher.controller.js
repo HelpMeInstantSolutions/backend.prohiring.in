@@ -2,6 +2,7 @@ const path = require('path');
 const fs = require('fs');
 const { query } = require('../config/database');
 const notificationService = require('../services/notification.service');
+const otpService = require('../services/otp.service');
 
 // Helper to generate clean SEO slug for teacher profiles
 const generateTeacherSlug = (fullName, teacherId) => {
@@ -555,24 +556,66 @@ const applyToJob = async (req, res) => {
       [jobId, teacherId, coverNote || null, 'applied']
     );
 
-    // Notify school recruiter about the application
+    // Notify school recruiter about the application (In-app, Push, and Email)
     try {
       const jobInfo = await query(
-        `SELECT j.title, sp.user_id as school_user_id, tp.full_name as teacher_name 
+        `SELECT 
+           j.id as job_id,
+           j.title as job_title,
+           j.share_code,
+           sp.id as school_id,
+           sp.user_id as school_user_id,
+           sp.school_name,
+           sp.contact_person,
+           u_school.email as school_email,
+           tp.full_name as teacher_name,
+           tp.phone as teacher_phone,
+           u_teacher.email as teacher_email,
+           tp.primary_subject as teacher_subject,
+           tp.highest_qualification as teacher_qualification,
+           tp.experience_years as teacher_exp,
+           tp.current_city as teacher_city
          FROM jobs j 
          JOIN school_profiles sp ON j.school_id = sp.id 
+         LEFT JOIN users u_school ON sp.user_id = u_school.id
          JOIN teacher_profiles tp ON tp.id = ? 
+         LEFT JOIN users u_teacher ON tp.user_id = u_teacher.id
          WHERE j.id = ?`,
         [teacherId, jobId]
       );
       if (jobInfo.length > 0) {
+        const info = jobInfo[0];
+        // 1. In-app notification
         notificationService.notifyApplicationReceived({
-          schoolUserId: jobInfo[0].school_user_id,
-          jobTitle: jobInfo[0].title,
-          teacherName: jobInfo[0].teacher_name,
+          schoolUserId: info.school_user_id,
+          jobTitle: info.job_title,
+          teacherName: info.teacher_name,
           jobId,
           applicationId: appResult.insertId
         }).catch(() => {});
+
+        // 2. Real-time Email Alert to School Recruiter
+        if (info.school_email) {
+          otpService.sendApplicationAlertToSchool({
+            toEmail: info.school_email,
+            schoolName: info.school_name,
+            contactPerson: info.contact_person,
+            jobTitle: info.job_title,
+            shareCode: info.share_code,
+            teacherName: info.teacher_name,
+            teacherPhone: info.teacher_phone,
+            teacherEmail: info.teacher_email,
+            teacherSubject: info.teacher_subject,
+            teacherExp: info.teacher_exp,
+            teacherQualification: info.teacher_qualification,
+            teacherCity: info.teacher_city,
+            coverNote: coverNote || null,
+            applicationId: appResult.insertId,
+            jobId
+          }).catch((emailErr) => {
+            console.warn('[Application] Recruiter email dispatch notice:', emailErr.message);
+          });
+        }
       }
     } catch (notifErr) {
       console.warn('[Application] Notification dispatch notice:', notifErr.message);

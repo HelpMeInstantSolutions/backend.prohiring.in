@@ -30,7 +30,10 @@ router.post('/impersonate', adminController.impersonateUser);
 // User status toggles (active/suspended)
 router.put('/users/:id/status', adminController.toggleUserStatus);
 
-// Job oversight
+// Job oversight & settings
+router.get('/jobs/settings', adminController.getJobSettings);
+router.put('/jobs/settings', adminController.updateJobSettings);
+router.put('/jobs/:id/status', adminController.updateJobStatus);
 router.get('/jobs', adminController.getAllJobs);
 router.delete('/jobs/:id', adminController.deleteJob);
 

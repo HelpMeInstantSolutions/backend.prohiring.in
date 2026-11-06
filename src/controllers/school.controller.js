@@ -4,6 +4,7 @@ const { query } = require('../config/database');
 const webdavService = require('../services/webdav.service');
 const { dispatchEmail } = require('../services/otp.service');
 const notificationService = require('../services/notification.service');
+const { expireOldJobs } = require('../services/jobExpiry.service');
 
 // GET /api/v1/school/profile
 const getProfile = async (req, res) => {
@@ -283,11 +284,17 @@ const postJob = async (req, res) => {
       designation,
       subject,
       qualificationRequired,
+      qualification,
       experienceRequired,
+      experience_required,
       salaryMin,
+      salary_min,
       salaryMax,
+      salary_max,
       salaryNegotiable,
+      salary_negotiable,
       jobType,
+      job_type,
       openings,
       description,
       responsibilities,
@@ -295,13 +302,24 @@ const postJob = async (req, res) => {
       city,
       state,
       deadline,
+      status,
       posterUrl,
-      poster_url
+      poster_url,
+      postType,
+      post_type
     } = req.body;
 
     const jobCity = (city || school.city || '').trim();
     const jobState = (state || school.state || '').trim();
     const finalPosterUrl = (posterUrl || poster_url || '').trim() || null;
+    const finalPostType = (postType || post_type || 'Teaching Staff').trim();
+    const finalStatus = (status === 'draft' || status === 'closed') ? status : 'active';
+    const finalQual = qualificationRequired || qualification || 'Relevant Degree / B.Ed';
+    const finalExp = experienceRequired || experience_required || '1-3 Years';
+    const finalSalMin = salaryMin !== undefined ? salaryMin : (salary_min !== undefined ? salary_min : 0);
+    const finalSalMax = salaryMax !== undefined ? salaryMax : (salary_max !== undefined ? salary_max : 0);
+    const finalSalNeg = salaryNegotiable !== undefined ? (salaryNegotiable ? 1 : 0) : (salary_negotiable !== undefined ? (salary_negotiable ? 1 : 0) : 0);
+    const finalJobType = jobType || job_type || 'full_time';
 
     if (!title || !designation || !subject || !description || !jobCity || !jobState) {
       return res.status(400).json({
@@ -313,33 +331,66 @@ const postJob = async (req, res) => {
     const crypto = require('crypto');
     const shareCode = crypto.randomBytes(8).toString('hex'); // 16-character unique alphanumeric slug
 
-    const result = await query(
-      `INSERT INTO jobs 
-       (school_id, title, designation, subject, qualification_required, experience_required, salary_min, salary_max, salary_negotiable, job_type, openings, description, responsibilities, benefits, city, state, deadline, status, share_code, poster_url)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        school.id,
-        title.trim(),
-        designation.trim(),
-        subject.trim(),
-        qualificationRequired || 'Relevant Degree / B.Ed',
-        experienceRequired || '1-3 Years',
-        salaryMin || 0,
-        salaryMax || 0,
-        salaryNegotiable ? 1 : 0,
-        jobType || 'full_time',
-        openings || 1,
-        description,
-        responsibilities || null,
-        benefits || null,
-        jobCity,
-        jobState,
-        deadline || null,
-        'active',
-        shareCode,
-        finalPosterUrl
-      ]
-    );
+    let result;
+    try {
+      result = await query(
+        `INSERT INTO jobs 
+         (school_id, title, designation, subject, qualification_required, experience_required, salary_min, salary_max, salary_negotiable, job_type, openings, description, responsibilities, benefits, city, state, deadline, status, share_code, poster_url, post_type)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          school.id,
+          title.trim(),
+          designation.trim(),
+          subject.trim(),
+          finalQual,
+          finalExp,
+          finalSalMin,
+          finalSalMax,
+          finalSalNeg,
+          finalJobType,
+          openings || 1,
+          description,
+          responsibilities || null,
+          benefits || null,
+          jobCity,
+          jobState,
+          deadline || null,
+          finalStatus,
+          shareCode,
+          finalPosterUrl,
+          finalPostType
+        ]
+      );
+    } catch (insertErr) {
+      // Fallback if post_type column is not yet present on table
+      result = await query(
+        `INSERT INTO jobs 
+         (school_id, title, designation, subject, qualification_required, experience_required, salary_min, salary_max, salary_negotiable, job_type, openings, description, responsibilities, benefits, city, state, deadline, status, share_code, poster_url)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          school.id,
+          title.trim(),
+          designation.trim(),
+          subject.trim(),
+          finalQual,
+          finalExp,
+          finalSalMin,
+          finalSalMax,
+          finalSalNeg,
+          finalJobType,
+          openings || 1,
+          description,
+          responsibilities || null,
+          benefits || null,
+          jobCity,
+          jobState,
+          deadline || null,
+          finalStatus,
+          shareCode,
+          finalPosterUrl
+        ]
+      );
+    }
 
     return res.status(201).json({
       success: true,
@@ -358,6 +409,9 @@ const postJob = async (req, res) => {
 // GET /api/v1/school/jobs
 const getMyJobs = async (req, res) => {
   try {
+    // Run auto-expiration check
+    await expireOldJobs();
+
     const userId = req.user.id;
     const schoolRows = await query('SELECT id FROM school_profiles WHERE user_id = ?', [userId]);
     if (schoolRows.length === 0) return res.status(404).json({ success: false, message: 'School profile not found.' });
@@ -450,6 +504,7 @@ const updateJob = async (req, res) => {
            state = COALESCE(?, state),
            deadline = COALESCE(?, deadline),
            status = COALESCE(?, status),
+           created_at = CASE WHEN ? = 'active' THEN NOW() ELSE created_at END,
            poster_url = COALESCE(?, poster_url),
            post_type = COALESCE(?, post_type)
        WHERE id = ?`,
@@ -457,6 +512,7 @@ const updateJob = async (req, res) => {
         title, designation, subject, finalQual, finalExp,
         finalSalMin, finalSalMax, finalSalNeg, finalJobType, openings, description,
         responsibilities, benefits, city, state, deadline, status,
+        status,
         finalPosterUrl !== undefined ? finalPosterUrl : null,
         finalPostType,
         jobId

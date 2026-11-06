@@ -295,12 +295,125 @@ async function sendAccountCredentialsEmail({ toEmail, name, role, phone, passwor
   return await dispatchEmail(toEmail, null, subject, html);
 }
 
+/**
+ * Dispatch real-time candidate application alert email to school recruiter
+ */
+async function sendApplicationAlertToSchool({
+  toEmail,
+  schoolName,
+  contactPerson,
+  jobTitle,
+  shareCode,
+  teacherName,
+  teacherPhone,
+  teacherEmail,
+  teacherSubject,
+  teacherExp,
+  teacherQualification,
+  teacherCity,
+  coverNote,
+  applicationId,
+  jobId
+}) {
+  const appName = await getConfigValue('app_name', 'ProHiring');
+  const brandDomain = await getConfigValue('brand_domain', 'prohiring.in');
+  const reviewUrl = `https://${brandDomain}/school/jobs`;
+  const subject = `🔔 New Application: ${teacherName} applied for "${jobTitle}" — ${appName}`;
+
+  const html = `
+    <div style="font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #E2E8F0; border-radius: 16px; background-color: #FFFFFF; color: #0F172A;">
+      <div style="text-align: center; margin-bottom: 24px; padding-bottom: 16px; border-bottom: 1px solid #F1F5F9;">
+        <h2 style="color: #4F46E5; margin: 0; font-size: 26px; font-weight: 800; letter-spacing: -0.5px;">${appName}</h2>
+        <p style="color: #64748B; font-size: 13px; margin: 4px 0 0 0; font-weight: 500;">School & Educator Job Connect Platform</p>
+      </div>
+
+      <div style="margin-bottom: 20px;">
+        <span style="display: inline-block; background-color: #ECFDF5; color: #065F46; border: 1px solid #A7F3D0; font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 9999px; text-transform: uppercase; letter-spacing: 0.5px;">
+          ✦ New Candidate Application
+        </span>
+        <h3 style="font-size: 20px; font-weight: 700; color: #0F172A; margin: 12px 0 6px 0;">
+          Candidate Applied for "${jobTitle}"
+        </h3>
+        <p style="font-size: 14px; color: #475569; line-height: 1.5; margin: 0;">
+          Dear <strong>${contactPerson || schoolName || 'Recruitment Team'}</strong>,<br/>
+          A verified educator has just submitted their application for your vacancy on ${appName}.
+        </p>
+      </div>
+
+      <!-- Candidate Snapshot Card -->
+      <div style="background-color: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 14px; padding: 20px; margin-bottom: 24px;">
+        <h4 style="font-size: 14px; font-weight: 700; color: #1E293B; margin: 0 0 14px 0; border-bottom: 1px solid #E2E8F0; padding-bottom: 8px;">
+          Educator Profile Highlights
+        </h4>
+        <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+          <tr>
+            <td style="padding: 6px 0; color: #64748B; width: 40%;">Candidate Name:</td>
+            <td style="padding: 6px 0; font-weight: 700; color: #0F172A;">${teacherName}</td>
+          </tr>
+          <tr>
+            <td style="padding: 6px 0; color: #64748B;">Applied Vacancy:</td>
+            <td style="padding: 6px 0; font-weight: 600; color: #4F46E5;">${jobTitle}</td>
+          </tr>
+          ${teacherSubject ? `<tr>
+            <td style="padding: 6px 0; color: #64748B;">Primary Subject:</td>
+            <td style="padding: 6px 0; font-weight: 600; color: #0F172A;">${teacherSubject}</td>
+          </tr>` : ''}
+          ${teacherExp !== undefined && teacherExp !== null ? `<tr>
+            <td style="padding: 6px 0; color: #64748B;">Teaching Experience:</td>
+            <td style="padding: 6px 0; font-weight: 600; color: #0F172A;">${teacherExp} Years</td>
+          </tr>` : ''}
+          ${teacherQualification ? `<tr>
+            <td style="padding: 6px 0; color: #64748B;">Highest Qualification:</td>
+            <td style="padding: 6px 0; font-weight: 600; color: #0F172A;">${teacherQualification}</td>
+          </tr>` : ''}
+          ${teacherPhone ? `<tr>
+            <td style="padding: 6px 0; color: #64748B;">Contact Phone:</td>
+            <td style="padding: 6px 0; font-weight: 600; color: #0F172A;">+91 ${teacherPhone}</td>
+          </tr>` : ''}
+          ${teacherEmail ? `<tr>
+            <td style="padding: 6px 0; color: #64748B;">Email Address:</td>
+            <td style="padding: 6px 0; font-weight: 600; color: #0F172A;">${teacherEmail}</td>
+          </tr>` : ''}
+          ${teacherCity ? `<tr>
+            <td style="padding: 6px 0; color: #64748B;">Current Location:</td>
+            <td style="padding: 6px 0; font-weight: 600; color: #0F172A;">${teacherCity}</td>
+          </tr>` : ''}
+        </table>
+      </div>
+
+      ${coverNote ? `
+      <!-- Cover Note -->
+      <div style="background-color: #FEF9C3; border-left: 4px solid #EAB308; border-radius: 8px; padding: 14px 16px; margin-bottom: 24px;">
+        <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: #854D0E; margin-bottom: 4px;">Candidate Cover Note</div>
+        <p style="font-size: 13px; color: #713F12; margin: 0; line-height: 1.5; font-style: italic;">
+          "${coverNote.replace(/</g, '&lt;').replace(/>/g, '&gt;')}"
+        </p>
+      </div>` : ''}
+
+      <!-- Action Button -->
+      <div style="text-align: center; margin-bottom: 28px;">
+        <a href="${reviewUrl}" style="display: inline-block; background-color: #4F46E5; color: #FFFFFF; font-weight: 700; font-size: 14px; text-decoration: none; padding: 13px 32px; border-radius: 12px; box-shadow: 0 4px 12px rgba(79, 70, 229, 0.25);">
+          Review Applicant & Download CV
+        </a>
+      </div>
+
+      <p style="font-size: 12px; color: #94A3B8; text-align: center; margin: 0; line-height: 1.5;">
+        You can shortlist, invite for interview, or reject candidates directly from your ProHiring School Portal.<br/>
+        © ${new Date().getFullYear()} ${appName}. All rights reserved.
+      </p>
+    </div>
+  `;
+
+  return await dispatchEmail(toEmail, null, subject, html);
+}
+
 module.exports = {
   sanitizePhone,
   dispatchSms,
   dispatchEmail,
   sendTestMail,
   sendTestSms,
-  sendAccountCredentialsEmail
+  sendAccountCredentialsEmail,
+  sendApplicationAlertToSchool
 };
 

@@ -162,7 +162,8 @@ async function runMigration() {
         ['whatsapp_enabled', 'true', 'General', 1],
         ['whatsapp_number', '+919876543210', 'General', 1],
         ['whatsapp_message', 'Hello ProHiring Team, I need assistance regarding teaching jobs / school recruitment.', 'General', 1],
-        ['whatsapp_position', 'bottom-right', 'General', 1]
+        ['whatsapp_position', 'bottom-right', 'General', 1],
+        ['job_auto_expire_days', '15', 'recruitment', 0]
       ];
       for (const [key, val, cat, isPub] of whatsappDefaults) {
         await connection.query(
