@@ -311,7 +311,7 @@ const postJob = async (req, res) => {
     }
 
     const crypto = require('crypto');
-    const shareCode = crypto.randomBytes(4).toString('hex');
+    const shareCode = crypto.randomBytes(8).toString('hex'); // 16-character unique alphanumeric slug
 
     const result = await query(
       `INSERT INTO jobs 

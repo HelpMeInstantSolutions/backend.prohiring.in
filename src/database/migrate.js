@@ -139,6 +139,23 @@ async function runMigration() {
       console.warn('Notice during school slug backfill:', slugErr.message);
     }
 
+    // Ensure all jobs have unique 16-character share_code slug
+    try {
+      const crypto = require('crypto');
+      const [shortOrNullJobs] = await connection.query(
+        "SELECT id FROM `jobs` WHERE `share_code` IS NULL OR `share_code` = '' OR LENGTH(`share_code`) != 16 OR `share_code` REGEXP '^[0-9]+$'"
+      );
+      if (shortOrNullJobs && shortOrNullJobs.length > 0) {
+        console.log(`Generating unique 16-character slugs for ${shortOrNullJobs.length} jobs...`);
+        for (const j of shortOrNullJobs) {
+          const code = crypto.randomBytes(8).toString('hex');
+          await connection.query('UPDATE `jobs` SET `share_code` = ? WHERE `id` = ?', [code, j.id]);
+        }
+      }
+    } catch (jSlugErr) {
+      console.warn('Notice during jobs 16-char slug migration:', jSlugErr.message);
+    }
+
     // Ensure WhatsApp platform settings exist
     try {
       const whatsappDefaults = [

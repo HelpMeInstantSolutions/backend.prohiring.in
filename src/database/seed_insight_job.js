@@ -97,26 +97,32 @@ Key Highlights:
     const jobBenefits = 'Good Working Environment, Opportunity for Growth, Attractive Remuneration for Deserving Candidates, Modern Classroom Infrastructure, Academic Autonomy';
 
     const [existingJobs] = await connection.query(
-      'SELECT id FROM jobs WHERE school_id = ? AND subject = ? AND designation LIKE ?',
+      'SELECT id, share_code FROM jobs WHERE school_id = ? AND subject = ? AND designation LIKE ?',
       [schoolId, 'Chemistry', '%PGT%']
     );
+
+    const crypto = require('crypto');
+    let shareCode = existingJobs[0]?.share_code;
+    if (!shareCode || shareCode.length !== 16) {
+      shareCode = crypto.randomBytes(8).toString('hex');
+    }
 
     if (existingJobs.length === 0) {
       const [jobRes] = await connection.query(
         `INSERT INTO jobs 
          (school_id, title, designation, subject, qualification_required, experience_required, salary_min, salary_max, salary_negotiable, job_type, openings, description, responsibilities, benefits, city, state, deadline, status, share_code, poster_url)
-         VALUES (?, ?, 'PGT (Post Graduate Teacher - Classes XI-XII)', 'Chemistry', 'M.Sc. Chemistry with B.Ed. (as per CBSE norms)', '2-5 Years', 45000, 75000, 1, 'full_time', 2, ?, ?, ?, 'Bhiwani', 'Haryana', DATE_ADD(CURRENT_DATE, INTERVAL 60 DAY), 'active', 'icb-chem', ?)`,
-        [schoolId, jobTitle, jobDesc, jobResp, jobBenefits, flyerPosterPath]
+         VALUES (?, ?, 'PGT (Post Graduate Teacher - Classes XI-XII)', 'Chemistry', 'M.Sc. Chemistry with B.Ed. (as per CBSE norms)', '2-5 Years', 45000, 75000, 1, 'full_time', 2, ?, ?, ?, 'Bhiwani', 'Haryana', DATE_ADD(CURRENT_DATE, INTERVAL 60 DAY), 'active', ?, ?)`,
+        [schoolId, jobTitle, jobDesc, jobResp, jobBenefits, shareCode, flyerPosterPath]
       );
-      console.log(`Created PGT Chemistry job vacancy (ID: ${jobRes.insertId}) with share_code: 'icb-chem'`);
+      console.log(`Created PGT Chemistry job vacancy (ID: ${jobRes.insertId}) with 16-char slug: ${shareCode}`);
     } else {
       await connection.query(
         `UPDATE jobs SET 
-          title = ?, description = ?, responsibilities = ?, benefits = ?, poster_url = ?, city = 'Bhiwani', state = 'Haryana', status = 'active'
+          title = ?, description = ?, responsibilities = ?, benefits = ?, poster_url = ?, city = 'Bhiwani', state = 'Haryana', status = 'active', share_code = ?
          WHERE id = ?`,
-        [jobTitle, jobDesc, jobResp, jobBenefits, flyerPosterPath, existingJobs[0].id]
+        [jobTitle, jobDesc, jobResp, jobBenefits, flyerPosterPath, shareCode, existingJobs[0].id]
       );
-      console.log(`Updated existing PGT Chemistry job vacancy (ID: ${existingJobs[0].id})`);
+      console.log(`Updated existing PGT Chemistry job vacancy (ID: ${existingJobs[0].id}) with 16-char slug: ${shareCode}`);
     }
 
     console.log('Seeding completed successfully!');

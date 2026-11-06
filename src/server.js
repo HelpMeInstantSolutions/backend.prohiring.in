@@ -712,13 +712,15 @@ async function autoMigrateColumns() {
         await pool.query('ALTER TABLE `jobs` ADD COLUMN `share_code` VARCHAR(32) UNIQUE DEFAULT NULL');
       }
 
-      // Backfill any jobs where share_code is null
-      const [nullJobs] = await pool.query("SELECT id FROM `jobs` WHERE `share_code` IS NULL OR `share_code` = ''");
-      if (nullJobs && nullJobs.length > 0) {
-        console.log(`[Auto-Migrate] Backfilling share_code for ${nullJobs.length} jobs...`);
+      // Ensure all jobs have a unique 16-character share_code slug
+      const [shortOrNullJobs] = await pool.query(
+        "SELECT id FROM `jobs` WHERE `share_code` IS NULL OR `share_code` = '' OR LENGTH(`share_code`) != 16 OR `share_code` REGEXP '^[0-9]+$'"
+      );
+      if (shortOrNullJobs && shortOrNullJobs.length > 0) {
+        console.log(`[Auto-Migrate] Generating unique 16-character slugs for ${shortOrNullJobs.length} jobs...`);
         const crypto = require('crypto');
-        for (const j of nullJobs) {
-          const code = crypto.randomBytes(4).toString('hex');
+        for (const j of shortOrNullJobs) {
+          const code = crypto.randomBytes(8).toString('hex');
           await pool.query('UPDATE `jobs` SET `share_code` = ? WHERE `id` = ?', [code, j.id]);
         }
       }
