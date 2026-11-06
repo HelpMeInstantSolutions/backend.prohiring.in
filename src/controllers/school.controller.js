@@ -537,7 +537,7 @@ const updateJob = async (req, res) => {
       jobType, job_type, openings, description,
       responsibilities, benefits, city, state, deadline, status,
       posterUrl, poster_url, postType, post_type,
-      interviewTime, interview_time, venue
+      interviewTime, interview_time, venue, slug
     } = req.body;
 
     const parseNumber = (val) => {
@@ -546,12 +546,19 @@ const updateJob = async (req, res) => {
       return isNaN(num) ? null : num;
     };
 
+    const hasSalMin = (salaryMin !== undefined || salary_min !== undefined);
+    const hasSalMax = (salaryMax !== undefined || salary_max !== undefined);
+    const parsedSalMin = parseNumber(salaryMin !== undefined ? salaryMin : salary_min);
+    const parsedSalMax = parseNumber(salaryMax !== undefined ? salaryMax : salary_max);
+
+    const hasOpenings = openings !== undefined;
+    const parsedOpenings = parseNumber(openings);
+
+    const hasSalNeg = (salaryNegotiable !== undefined || salary_negotiable !== undefined);
+    const finalSalNeg = salaryNegotiable !== undefined ? (salaryNegotiable ? 1 : 0) : (salary_negotiable !== undefined ? (salary_negotiable ? 1 : 0) : null);
+
     const finalQual = (qualificationRequired || qualification || '').trim() || null;
     const finalExp = (experienceRequired || experience_required || '').trim() || null;
-    const finalSalMin = parseNumber(salaryMin !== undefined ? salaryMin : salary_min);
-    const finalSalMax = parseNumber(salaryMax !== undefined ? salaryMax : salary_max);
-    const finalOpenings = parseNumber(openings);
-    const finalSalNeg = salaryNegotiable !== undefined ? (salaryNegotiable ? 1 : 0) : (salary_negotiable !== undefined ? (salary_negotiable ? 1 : 0) : null);
     const finalJobType = (jobType || job_type || '').trim() || null;
     const finalPostType = (postType || post_type || '').trim() || null;
     const finalDeadline = (deadline && String(deadline).trim() !== '') ? String(deadline).trim() : null;
@@ -566,6 +573,8 @@ const updateJob = async (req, res) => {
       ? ((posterUrl || poster_url || '').trim() || null)
       : undefined;
 
+    const finalSlug = slug !== undefined ? (String(slug).trim().toLowerCase().replace(/[^a-z0-9-_]/g, '') || null) : undefined;
+
     try {
       await query(
         `UPDATE jobs 
@@ -574,11 +583,11 @@ const updateJob = async (req, res) => {
              subject = COALESCE(?, subject),
              qualification_required = COALESCE(?, qualification_required),
              experience_required = COALESCE(?, experience_required),
-             salary_min = COALESCE(?, salary_min),
-             salary_max = COALESCE(?, salary_max),
-             salary_negotiable = COALESCE(?, salary_negotiable),
+             salary_min = CASE WHEN ? = 1 THEN ? ELSE salary_min END,
+             salary_max = CASE WHEN ? = 1 THEN ? ELSE salary_max END,
+             salary_negotiable = CASE WHEN ? = 1 THEN ? ELSE salary_negotiable END,
              job_type = COALESCE(?, job_type),
-             openings = COALESCE(?, openings),
+             openings = CASE WHEN ? = 1 THEN COALESCE(?, 1) ELSE openings END,
              description = COALESCE(?, description),
              responsibilities = COALESCE(?, responsibilities),
              benefits = COALESCE(?, benefits),
@@ -590,7 +599,8 @@ const updateJob = async (req, res) => {
              poster_url = COALESCE(?, poster_url),
              post_type = COALESCE(?, post_type),
              interview_time = COALESCE(?, interview_time),
-             venue = COALESCE(?, venue)
+             venue = COALESCE(?, venue),
+             slug = CASE WHEN ? = 1 THEN ? ELSE slug END
          WHERE id = ?`,
         [
           title ? title.trim() : null,
@@ -598,11 +608,11 @@ const updateJob = async (req, res) => {
           subject ? subject.trim() : null,
           finalQual,
           finalExp,
-          finalSalMin,
-          finalSalMax,
-          finalSalNeg,
+          hasSalMin ? 1 : 0, parsedSalMin,
+          hasSalMax ? 1 : 0, parsedSalMax,
+          hasSalNeg ? 1 : 0, finalSalNeg,
           finalJobType,
-          finalOpenings,
+          hasOpenings ? 1 : 0, parsedOpenings,
           description ? description.trim() : null,
           responsibilities ? responsibilities.trim() : null,
           benefits ? benefits.trim() : null,
@@ -615,11 +625,12 @@ const updateJob = async (req, res) => {
           finalPostType,
           finalInterviewTime !== undefined ? finalInterviewTime : null,
           finalVenue !== undefined ? finalVenue : null,
+          finalSlug !== undefined ? 1 : 0, finalSlug,
           jobId
         ]
       );
     } catch (_) {
-      // Fallback if interview_time or venue column not yet added
+      // Fallback if interview_time, venue, or slug column not yet added
       await query(
         `UPDATE jobs 
          SET title = COALESCE(?, title),
@@ -627,11 +638,11 @@ const updateJob = async (req, res) => {
              subject = COALESCE(?, subject),
              qualification_required = COALESCE(?, qualification_required),
              experience_required = COALESCE(?, experience_required),
-             salary_min = COALESCE(?, salary_min),
-             salary_max = COALESCE(?, salary_max),
-             salary_negotiable = COALESCE(?, salary_negotiable),
+             salary_min = CASE WHEN ? = 1 THEN ? ELSE salary_min END,
+             salary_max = CASE WHEN ? = 1 THEN ? ELSE salary_max END,
+             salary_negotiable = CASE WHEN ? = 1 THEN ? ELSE salary_negotiable END,
              job_type = COALESCE(?, job_type),
-             openings = COALESCE(?, openings),
+             openings = CASE WHEN ? = 1 THEN COALESCE(?, 1) ELSE openings END,
              description = COALESCE(?, description),
              responsibilities = COALESCE(?, responsibilities),
              benefits = COALESCE(?, benefits),
@@ -649,11 +660,11 @@ const updateJob = async (req, res) => {
           subject ? subject.trim() : null,
           finalQual,
           finalExp,
-          finalSalMin,
-          finalSalMax,
-          finalSalNeg,
+          hasSalMin ? 1 : 0, parsedSalMin,
+          hasSalMax ? 1 : 0, parsedSalMax,
+          hasSalNeg ? 1 : 0, finalSalNeg,
           finalJobType,
-          finalOpenings,
+          hasOpenings ? 1 : 0, parsedOpenings,
           description ? description.trim() : null,
           responsibilities ? responsibilities.trim() : null,
           benefits ? benefits.trim() : null,
