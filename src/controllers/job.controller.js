@@ -117,6 +117,7 @@ const getPublicJobs = async (req, res) => {
         j.id, j.share_code, j.title, j.designation, j.subject, j.qualification_required, 
         j.experience_required, j.salary_min, j.salary_max, j.salary_negotiable, 
         j.job_type, j.openings, j.city, j.state, j.deadline, j.created_at, j.poster_url,
+        j.interview_time, j.venue,
         s.id as school_id, s.school_name, s.logo_url as school_logo, s.board, s.is_verified, s.slug as school_slug,
         s.latitude as school_latitude, s.longitude as school_longitude, s.address as school_address,
         ${hasCoords ? `${haversineFormula} AS distance_km` : 'NULL AS distance_km'}
@@ -155,7 +156,7 @@ const getFeaturedJobs = async (req, res) => {
       SELECT 
         j.id, j.share_code, j.title, j.designation, j.subject, j.qualification_required, 
         j.experience_required, j.salary_min, j.salary_max, j.salary_negotiable, 
-        j.job_type, j.city, j.state, j.created_at, j.poster_url,
+        j.job_type, j.city, j.state, j.created_at, j.poster_url, j.interview_time, j.venue,
         s.school_name, s.logo_url as school_logo, s.board, s.slug as school_slug,
         s.latitude as school_latitude, s.longitude as school_longitude
       FROM jobs j

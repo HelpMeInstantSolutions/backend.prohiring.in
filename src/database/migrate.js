@@ -94,7 +94,10 @@ async function runMigration() {
     }
 
     const jobColumnsToEnsure = [
-      ['poster_url', 'VARCHAR(255) DEFAULT NULL']
+      ['poster_url', 'VARCHAR(255) DEFAULT NULL'],
+      ['post_type', "VARCHAR(100) DEFAULT 'Teaching Staff'"],
+      ['interview_time', 'VARCHAR(150) DEFAULT NULL'],
+      ['venue', 'TEXT DEFAULT NULL']
     ];
 
     for (const [colName, colDef] of jobColumnsToEnsure) {

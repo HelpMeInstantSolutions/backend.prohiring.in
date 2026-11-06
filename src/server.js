@@ -749,6 +749,33 @@ async function autoMigrateColumns() {
       console.warn('[Auto-Migrate] Jobs poster_url column warning:', pColErr.message);
     }
 
+    // Ensure interview_time and venue columns in jobs table
+    try {
+      const [itColExisting] = await pool.query(
+        `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS 
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'jobs' AND COLUMN_NAME = 'interview_time'`
+      );
+      if (itColExisting.length === 0) {
+        await pool.query("ALTER TABLE `jobs` ADD COLUMN `interview_time` VARCHAR(150) DEFAULT NULL");
+        console.log('[Auto-Migrate] Added interview_time column to jobs.');
+      }
+    } catch (itErr) {
+      console.warn('[Auto-Migrate] Jobs interview_time column warning:', itErr.message);
+    }
+
+    try {
+      const [venueColExisting] = await pool.query(
+        `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS 
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'jobs' AND COLUMN_NAME = 'venue'`
+      );
+      if (venueColExisting.length === 0) {
+        await pool.query("ALTER TABLE `jobs` ADD COLUMN `venue` TEXT DEFAULT NULL");
+        console.log('[Auto-Migrate] Added venue column to jobs.');
+      }
+    } catch (vErr) {
+      console.warn('[Auto-Migrate] Jobs venue column warning:', vErr.message);
+    }
+
     // Auto-seed Insight Classes Bhiwani & PGT Chemistry job with flyer
     try {
       const bcrypt = require('bcryptjs');

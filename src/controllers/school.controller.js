@@ -272,130 +272,196 @@ const uploadJobPoster = async (req, res) => {
 };
 
 // POST /api/v1/school/jobs
+// POST /api/v1/school/jobs (Supports both single vacancy and batch multi-vacancy posting)
 const postJob = async (req, res) => {
   try {
     const userId = req.user.id;
-    const schoolRows = await query('SELECT id, is_verified, city, state FROM school_profiles WHERE user_id = ?', [userId]);
+    const schoolRows = await query('SELECT id, school_name, is_verified, city, state, address FROM school_profiles WHERE user_id = ?', [userId]);
     if (schoolRows.length === 0) return res.status(404).json({ success: false, message: 'School profile not found.' });
 
     const school = schoolRows[0];
-    const {
-      title,
-      designation,
-      subject,
-      qualificationRequired,
-      qualification,
-      experienceRequired,
-      experience_required,
-      salaryMin,
-      salary_min,
-      salaryMax,
-      salary_max,
-      salaryNegotiable,
-      salary_negotiable,
-      jobType,
-      job_type,
-      openings,
-      description,
-      responsibilities,
-      benefits,
-      city,
-      state,
-      deadline,
-      status,
-      posterUrl,
-      poster_url,
-      postType,
-      post_type
-    } = req.body;
+    const crypto = require('crypto');
 
-    const jobCity = (city || school.city || '').trim();
-    const jobState = (state || school.state || '').trim();
-    const finalPosterUrl = (posterUrl || poster_url || '').trim() || null;
-    const finalPostType = (postType || post_type || 'Teaching Staff').trim();
-    const finalStatus = (status === 'draft' || status === 'closed') ? status : 'active';
-    const finalQual = qualificationRequired || qualification || 'Relevant Degree / B.Ed';
-    const finalExp = experienceRequired || experience_required || '1-3 Years';
-    const finalSalMin = salaryMin !== undefined ? salaryMin : (salary_min !== undefined ? salary_min : 0);
-    const finalSalMax = salaryMax !== undefined ? salaryMax : (salary_max !== undefined ? salary_max : 0);
-    const finalSalNeg = salaryNegotiable !== undefined ? (salaryNegotiable ? 1 : 0) : (salary_negotiable !== undefined ? (salary_negotiable ? 1 : 0) : 0);
-    const finalJobType = jobType || job_type || 'full_time';
+    // Handle single or batch multi-vacancy postings
+    const incomingJobs = Array.isArray(req.body.jobs) && req.body.jobs.length > 0 
+      ? req.body.jobs 
+      : [req.body];
 
-    if (!title || !designation || !subject || !description || !jobCity || !jobState) {
-      return res.status(400).json({
-        success: false,
-        message: 'Title, designation, subject, description, and school location (city and state) are mandatory.'
-      });
+    const createdIds = [];
+    const shareCodes = [];
+
+    for (const item of incomingJobs) {
+      const {
+        title,
+        designation,
+        subject,
+        qualificationRequired,
+        qualification,
+        experienceRequired,
+        experience_required,
+        salaryMin,
+        salary_min,
+        salaryMax,
+        salary_max,
+        salaryNegotiable,
+        salary_negotiable,
+        jobType,
+        job_type,
+        openings,
+        description,
+        responsibilities,
+        benefits,
+        city,
+        state,
+        deadline,
+        status,
+        posterUrl,
+        poster_url,
+        postType,
+        post_type,
+        interviewTime,
+        interview_time,
+        venue
+      } = item;
+
+      const jobCity = (city || school.city || '').trim();
+      const jobState = (state || school.state || '').trim();
+      const finalPosterUrl = (posterUrl || poster_url || '').trim() || null;
+      const finalPostType = (postType || post_type || 'Teaching Staff').trim();
+      const finalStatus = (status === 'draft' || status === 'closed') ? status : 'active';
+      const finalQual = qualificationRequired || qualification || 'Relevant Degree / B.Ed';
+      const finalExp = experienceRequired || experience_required || '1-3 Years';
+      const finalSalMin = salaryMin !== undefined ? salaryMin : (salary_min !== undefined ? salary_min : 0);
+      const finalSalMax = salaryMax !== undefined ? salaryMax : (salary_max !== undefined ? salary_max : 0);
+      const finalSalNeg = salaryNegotiable !== undefined ? (salaryNegotiable ? 1 : 0) : (salary_negotiable !== undefined ? (salary_negotiable ? 1 : 0) : 0);
+      const finalJobType = jobType || job_type || 'full_time';
+      const finalInterviewTime = (interviewTime || interview_time || '').trim() || null;
+      const finalVenue = (venue || school.address || '').trim() || null;
+
+      if (!title || !designation || !subject || !description || !jobCity || !jobState) {
+        continue;
+      }
+
+      const shareCode = crypto.randomBytes(8).toString('hex'); // 16-character unique alphanumeric slug
+
+      let result;
+      try {
+        result = await query(
+          `INSERT INTO jobs 
+           (school_id, title, designation, subject, qualification_required, experience_required, salary_min, salary_max, salary_negotiable, job_type, openings, description, responsibilities, benefits, city, state, deadline, status, share_code, poster_url, post_type, interview_time, venue)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            school.id,
+            title.trim(),
+            designation.trim(),
+            subject.trim(),
+            finalQual,
+            finalExp,
+            finalSalMin,
+            finalSalMax,
+            finalSalNeg,
+            finalJobType,
+            openings || 1,
+            description,
+            responsibilities || null,
+            benefits || null,
+            jobCity,
+            jobState,
+            deadline || null,
+            finalStatus,
+            shareCode,
+            finalPosterUrl,
+            finalPostType,
+            finalInterviewTime,
+            finalVenue
+          ]
+        );
+        createdIds.push(result.insertId);
+        shareCodes.push(shareCode);
+      } catch (insertErr) {
+        // Fallback without interview_time/venue if not yet migrated
+        try {
+          result = await query(
+            `INSERT INTO jobs 
+             (school_id, title, designation, subject, qualification_required, experience_required, salary_min, salary_max, salary_negotiable, job_type, openings, description, responsibilities, benefits, city, state, deadline, status, share_code, poster_url, post_type)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+              school.id,
+              title.trim(),
+              designation.trim(),
+              subject.trim(),
+              finalQual,
+              finalExp,
+              finalSalMin,
+              finalSalMax,
+              finalSalNeg,
+              finalJobType,
+              openings || 1,
+              description,
+              responsibilities || null,
+              benefits || null,
+              jobCity,
+              jobState,
+              deadline || null,
+              finalStatus,
+              shareCode,
+              finalPosterUrl,
+              finalPostType
+            ]
+          );
+          createdIds.push(result.insertId);
+          shareCodes.push(shareCode);
+        } catch (_2) {
+          result = await query(
+            `INSERT INTO jobs 
+             (school_id, title, designation, subject, qualification_required, experience_required, salary_min, salary_max, salary_negotiable, job_type, openings, description, responsibilities, benefits, city, state, deadline, status, share_code, poster_url)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+              school.id,
+              title.trim(),
+              designation.trim(),
+              subject.trim(),
+              finalQual,
+              finalExp,
+              finalSalMin,
+              finalSalMax,
+              finalSalNeg,
+              finalJobType,
+              openings || 1,
+              description,
+              responsibilities || null,
+              benefits || null,
+              jobCity,
+              jobState,
+              deadline || null,
+              finalStatus,
+              shareCode,
+              finalPosterUrl
+            ]
+          );
+          createdIds.push(result.insertId);
+          shareCodes.push(shareCode);
+        }
+      }
     }
 
-    const crypto = require('crypto');
-    const shareCode = crypto.randomBytes(8).toString('hex'); // 16-character unique alphanumeric slug
-
-    let result;
-    try {
-      result = await query(
-        `INSERT INTO jobs 
-         (school_id, title, designation, subject, qualification_required, experience_required, salary_min, salary_max, salary_negotiable, job_type, openings, description, responsibilities, benefits, city, state, deadline, status, share_code, poster_url, post_type)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          school.id,
-          title.trim(),
-          designation.trim(),
-          subject.trim(),
-          finalQual,
-          finalExp,
-          finalSalMin,
-          finalSalMax,
-          finalSalNeg,
-          finalJobType,
-          openings || 1,
-          description,
-          responsibilities || null,
-          benefits || null,
-          jobCity,
-          jobState,
-          deadline || null,
-          finalStatus,
-          shareCode,
-          finalPosterUrl,
-          finalPostType
-        ]
-      );
-    } catch (insertErr) {
-      // Fallback if post_type column is not yet present on table
-      result = await query(
-        `INSERT INTO jobs 
-         (school_id, title, designation, subject, qualification_required, experience_required, salary_min, salary_max, salary_negotiable, job_type, openings, description, responsibilities, benefits, city, state, deadline, status, share_code, poster_url)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          school.id,
-          title.trim(),
-          designation.trim(),
-          subject.trim(),
-          finalQual,
-          finalExp,
-          finalSalMin,
-          finalSalMax,
-          finalSalNeg,
-          finalJobType,
-          openings || 1,
-          description,
-          responsibilities || null,
-          benefits || null,
-          jobCity,
-          jobState,
-          deadline || null,
-          finalStatus,
-          shareCode,
-          finalPosterUrl
-        ]
-      );
+    if (createdIds.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Could not publish vacancies. Please check all mandatory fields (Title, Designation, Subject, Description).'
+      });
     }
 
     return res.status(201).json({
       success: true,
-      message: 'Vacancy posted successfully!',
-      data: { jobId: result.insertId, shareCode }
+      message: `${createdIds.length} ${createdIds.length > 1 ? 'vacancies' : 'vacancy'} published successfully!`,
+      data: {
+        count: createdIds.length,
+        jobIds: createdIds,
+        jobId: createdIds[0],
+        shareCodes,
+        shareCode: shareCodes[0]
+      }
     });
   } catch (error) {
     console.error('postJob Error:', error);
@@ -470,7 +536,8 @@ const updateJob = async (req, res) => {
       salaryNegotiable, salary_negotiable,
       jobType, job_type, openings, description,
       responsibilities, benefits, city, state, deadline, status,
-      posterUrl, poster_url, postType, post_type
+      posterUrl, poster_url, postType, post_type,
+      interviewTime, interview_time, venue
     } = req.body;
 
     const finalQual = qualificationRequired || qualification || null;
@@ -480,44 +547,89 @@ const updateJob = async (req, res) => {
     const finalSalNeg = salaryNegotiable !== undefined ? (salaryNegotiable ? 1 : 0) : (salary_negotiable !== undefined ? (salary_negotiable ? 1 : 0) : null);
     const finalJobType = jobType || job_type || null;
     const finalPostType = postType || post_type || null;
+    const finalInterviewTime = (interviewTime !== undefined || interview_time !== undefined) 
+      ? ((interviewTime || interview_time || '').trim() || null)
+      : undefined;
+    const finalVenue = venue !== undefined ? ((venue || '').trim() || null) : undefined;
 
     const finalPosterUrl = (posterUrl !== undefined || poster_url !== undefined)
       ? ((posterUrl || poster_url || '').trim() || null)
       : undefined;
 
-    await query(
-      `UPDATE jobs 
-       SET title = COALESCE(?, title),
-           designation = COALESCE(?, designation),
-           subject = COALESCE(?, subject),
-           qualification_required = COALESCE(?, qualification_required),
-           experience_required = COALESCE(?, experience_required),
-           salary_min = COALESCE(?, salary_min),
-           salary_max = COALESCE(?, salary_max),
-           salary_negotiable = COALESCE(?, salary_negotiable),
-           job_type = COALESCE(?, job_type),
-           openings = COALESCE(?, openings),
-           description = COALESCE(?, description),
-           responsibilities = COALESCE(?, responsibilities),
-           benefits = COALESCE(?, benefits),
-           city = COALESCE(?, city),
-           state = COALESCE(?, state),
-           deadline = COALESCE(?, deadline),
-           status = COALESCE(?, status),
-           created_at = CASE WHEN ? = 'active' THEN NOW() ELSE created_at END,
-           poster_url = COALESCE(?, poster_url),
-           post_type = COALESCE(?, post_type)
-       WHERE id = ?`,
-      [
-        title, designation, subject, finalQual, finalExp,
-        finalSalMin, finalSalMax, finalSalNeg, finalJobType, openings, description,
-        responsibilities, benefits, city, state, deadline, status,
-        status,
-        finalPosterUrl !== undefined ? finalPosterUrl : null,
-        finalPostType,
-        jobId
-      ]
-    );
+    try {
+      await query(
+        `UPDATE jobs 
+         SET title = COALESCE(?, title),
+             designation = COALESCE(?, designation),
+             subject = COALESCE(?, subject),
+             qualification_required = COALESCE(?, qualification_required),
+             experience_required = COALESCE(?, experience_required),
+             salary_min = COALESCE(?, salary_min),
+             salary_max = COALESCE(?, salary_max),
+             salary_negotiable = COALESCE(?, salary_negotiable),
+             job_type = COALESCE(?, job_type),
+             openings = COALESCE(?, openings),
+             description = COALESCE(?, description),
+             responsibilities = COALESCE(?, responsibilities),
+             benefits = COALESCE(?, benefits),
+             city = COALESCE(?, city),
+             state = COALESCE(?, state),
+             deadline = COALESCE(?, deadline),
+             status = COALESCE(?, status),
+             created_at = CASE WHEN ? = 'active' THEN NOW() ELSE created_at END,
+             poster_url = COALESCE(?, poster_url),
+             post_type = COALESCE(?, post_type),
+             interview_time = COALESCE(?, interview_time),
+             venue = COALESCE(?, venue)
+         WHERE id = ?`,
+        [
+          title, designation, subject, finalQual, finalExp,
+          finalSalMin, finalSalMax, finalSalNeg, finalJobType, openings, description,
+          responsibilities, benefits, city, state, deadline, status,
+          status,
+          finalPosterUrl !== undefined ? finalPosterUrl : null,
+          finalPostType,
+          finalInterviewTime !== undefined ? finalInterviewTime : null,
+          finalVenue !== undefined ? finalVenue : null,
+          jobId
+        ]
+      );
+    } catch (_) {
+      // Fallback if interview_time or venue column not yet added
+      await query(
+        `UPDATE jobs 
+         SET title = COALESCE(?, title),
+             designation = COALESCE(?, designation),
+             subject = COALESCE(?, subject),
+             qualification_required = COALESCE(?, qualification_required),
+             experience_required = COALESCE(?, experience_required),
+             salary_min = COALESCE(?, salary_min),
+             salary_max = COALESCE(?, salary_max),
+             salary_negotiable = COALESCE(?, salary_negotiable),
+             job_type = COALESCE(?, job_type),
+             openings = COALESCE(?, openings),
+             description = COALESCE(?, description),
+             responsibilities = COALESCE(?, responsibilities),
+             benefits = COALESCE(?, benefits),
+             city = COALESCE(?, city),
+             state = COALESCE(?, state),
+             deadline = COALESCE(?, deadline),
+             status = COALESCE(?, status),
+             created_at = CASE WHEN ? = 'active' THEN NOW() ELSE created_at END,
+             poster_url = COALESCE(?, poster_url),
+             post_type = COALESCE(?, post_type)
+         WHERE id = ?`,
+        [
+          title, designation, subject, finalQual, finalExp,
+          finalSalMin, finalSalMax, finalSalNeg, finalJobType, openings, description,
+          responsibilities, benefits, city, state, deadline, status,
+          status,
+          finalPosterUrl !== undefined ? finalPosterUrl : null,
+          finalPostType,
+          jobId
+        ]
+      );
+    }
 
     return res.status(200).json({
       success: true,
