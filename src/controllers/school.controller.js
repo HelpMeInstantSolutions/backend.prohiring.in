@@ -410,10 +410,22 @@ const updateJob = async (req, res) => {
     }
 
     const {
-      title, designation, subject, qualificationRequired, experienceRequired,
-      salaryMin, salaryMax, salaryNegotiable, jobType, openings, description,
-      responsibilities, benefits, city, state, deadline, status, posterUrl, poster_url
+      title, designation, subject, qualificationRequired, qualification,
+      experienceRequired, experience_required,
+      salaryMin, salary_min, salaryMax, salary_max,
+      salaryNegotiable, salary_negotiable,
+      jobType, job_type, openings, description,
+      responsibilities, benefits, city, state, deadline, status,
+      posterUrl, poster_url, postType, post_type
     } = req.body;
+
+    const finalQual = qualificationRequired || qualification || null;
+    const finalExp = experienceRequired || experience_required || null;
+    const finalSalMin = salaryMin !== undefined ? salaryMin : (salary_min !== undefined ? salary_min : null);
+    const finalSalMax = salaryMax !== undefined ? salaryMax : (salary_max !== undefined ? salary_max : null);
+    const finalSalNeg = salaryNegotiable !== undefined ? (salaryNegotiable ? 1 : 0) : (salary_negotiable !== undefined ? (salary_negotiable ? 1 : 0) : null);
+    const finalJobType = jobType || job_type || null;
+    const finalPostType = postType || post_type || null;
 
     const finalPosterUrl = (posterUrl !== undefined || poster_url !== undefined)
       ? ((posterUrl || poster_url || '').trim() || null)
@@ -438,13 +450,16 @@ const updateJob = async (req, res) => {
            state = COALESCE(?, state),
            deadline = COALESCE(?, deadline),
            status = COALESCE(?, status),
-           poster_url = COALESCE(?, poster_url)
+           poster_url = COALESCE(?, poster_url),
+           post_type = COALESCE(?, post_type)
        WHERE id = ?`,
       [
-        title, designation, subject, qualificationRequired, experienceRequired,
-        salaryMin, salaryMax, salaryNegotiable, jobType, openings, description,
+        title, designation, subject, finalQual, finalExp,
+        finalSalMin, finalSalMax, finalSalNeg, finalJobType, openings, description,
         responsibilities, benefits, city, state, deadline, status,
-        finalPosterUrl !== undefined ? finalPosterUrl : null, jobId
+        finalPosterUrl !== undefined ? finalPosterUrl : null,
+        finalPostType,
+        jobId
       ]
     );
 
