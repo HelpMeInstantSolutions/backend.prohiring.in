@@ -62,6 +62,11 @@ const getPublicSettings = async (req, res) => {
         androidMinVersion: settings.android_min_version || '1.0.0',
         faviconUrl: settings.favicon_url || '/favicon.png',
         logoUrl: settings.logo_url || '/logo.png',
+        gtmId: settings.gtm_id || 'GTM-TX4DSFLS',
+        gtmEnabled: settings.gtm_enabled !== 'false',
+        googleAnalyticsId: settings.google_analytics_id || '',
+        headScripts: settings.head_scripts || '',
+        bodyScripts: settings.body_scripts || '',
         whatsapp: {
           enabled: settings.whatsapp_enabled === 'true',
           number: settings.whatsapp_number || settings.support_phone || '+918950525183',

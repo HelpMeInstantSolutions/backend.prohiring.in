@@ -176,13 +176,21 @@ async function runMigration() {
         ['whatsapp_number', '+919876543210', 'General', 1],
         ['whatsapp_message', 'Hello ProHiring Team, I need assistance regarding teaching jobs / school recruitment.', 'General', 1],
         ['whatsapp_position', 'bottom-right', 'General', 1],
-        ['job_auto_expire_days', '15', 'recruitment', 0]
+        ['job_auto_expire_days', '15', 'recruitment', 0],
+        ['gtm_id', 'GTM-TX4DSFLS', 'analytics', 1],
+        ['gtm_enabled', 'true', 'analytics', 1],
+        ['google_analytics_id', '', 'analytics', 1],
+        ['head_scripts', '<script async src="https://www.googletagmanager.com/gtm.js?id=GTM-TX4DSFLS"></script>\n<script>\n  window.dataLayer = window.dataLayer || [];\n  function gtag(){dataLayer.push(arguments);}\n  gtag(\'js\', new Date());\n</script>', 'analytics', 1],
+        ['body_scripts', '<noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-TX4DSFLS" height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>', 'analytics', 1]
       ];
       for (const [key, val, cat, isPub] of whatsappDefaults) {
         await connection.query(
           `INSERT INTO system_settings (setting_key, setting_value, category, is_public) 
            VALUES (?, ?, ?, ?) 
-           ON DUPLICATE KEY UPDATE category = VALUES(category), is_public = VALUES(is_public)`,
+           ON DUPLICATE KEY UPDATE 
+             setting_value = IF(setting_value IS NULL OR setting_value = '', VALUES(setting_value), setting_value),
+             category = VALUES(category), 
+             is_public = VALUES(is_public)`,
           [key, val, cat, isPub]
         );
       }

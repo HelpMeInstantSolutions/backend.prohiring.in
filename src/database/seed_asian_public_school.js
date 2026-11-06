@@ -7,13 +7,8 @@ const crypto = require('crypto');
 dotenv.config({ path: path.join(__dirname, '../../.env') });
 
 async function seedAsianPublicSchool() {
-  const connection = await mysql.createConnection({
-    host: process.env.DB_HOST || '127.0.0.1',
-    port: parseInt(process.env.DB_PORT, 10) || 3306,
-    user: process.env.DB_USER || 'root',
-    password: process.env.DB_PASSWORD || '',
-    database: process.env.DB_NAME || 'prohiring_db'
-  });
+  const db = require('../config/database');
+  const connection = db.pool;
 
   try {
     console.log('--- Seeding Asian Public School Umra (Hansi) & Vacancies ---');
@@ -319,7 +314,7 @@ Walk-in interview at school campus or contact +91 9671955655.`,
   } catch (err) {
     console.error('Error during Asian Public School seeding:', err);
   } finally {
-    await connection.end();
+    // connection is managed by pool
   }
 }
 

@@ -967,6 +967,32 @@ Key Highlights:
       console.warn('[Auto-Migrate] school_boards table warning:', sbErr.message);
     }
 
+    // Ensure GTM & Tracking Analytics settings exist
+    try {
+      const gtmScript = `<script async src="https://www.googletagmanager.com/gtm.js?id=GTM-TX4DSFLS"></script>\n<script>\n  window.dataLayer = window.dataLayer || [];\n  function gtag(){dataLayer.push(arguments);}\n  gtag('js', new Date());\n</script>`;
+      const gtmNoscript = `<noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-TX4DSFLS" height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>`;
+      const tagDefaults = [
+        ['gtm_id', 'GTM-TX4DSFLS', 'analytics', 1],
+        ['gtm_enabled', 'true', 'analytics', 1],
+        ['google_analytics_id', '', 'analytics', 1],
+        ['head_scripts', gtmScript, 'analytics', 1],
+        ['body_scripts', gtmNoscript, 'analytics', 1]
+      ];
+      for (const [key, val, cat, isPub] of tagDefaults) {
+        await pool.query(
+          `INSERT INTO system_settings (setting_key, setting_value, category, is_public) 
+           VALUES (?, ?, ?, ?) 
+           ON DUPLICATE KEY UPDATE 
+             setting_value = IF(setting_value IS NULL OR setting_value = '', VALUES(setting_value), setting_value),
+             category = VALUES(category), 
+             is_public = VALUES(is_public)`,
+          [key, val, cat, isPub]
+        );
+      }
+    } catch (tagErr) {
+      console.warn('[Auto-Migrate] Tag Manager settings notice:', tagErr.message);
+    }
+
     console.log('[Auto-Migrate] Teacher profile columns, suggestions, system_settings, and posts/designations taxonomy verified.');
   } catch (err) {
     console.warn('[Auto-Migrate] Column check warning:', err.message);
