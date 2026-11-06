@@ -93,6 +93,26 @@ async function runMigration() {
       }
     }
 
+    const jobColumnsToEnsure = [
+      ['poster_url', 'VARCHAR(255) DEFAULT NULL']
+    ];
+
+    for (const [colName, colDef] of jobColumnsToEnsure) {
+      try {
+        const [existing] = await connection.query(
+          `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS 
+           WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'jobs' AND COLUMN_NAME = ?`,
+          [colName]
+        );
+        if (existing.length === 0) {
+          console.log(`Adding column '${colName}' to jobs...`);
+          await connection.query(`ALTER TABLE \`jobs\` ADD COLUMN \`${colName}\` ${colDef};`);
+        }
+      } catch (err) {
+        console.warn(`Could not check or add column ${colName} to jobs:`, err.message);
+      }
+    }
+
     // Backfill school slugs if empty
     try {
       const [schoolsWithoutSlug] = await connection.query(

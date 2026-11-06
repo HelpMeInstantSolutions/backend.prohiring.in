@@ -230,6 +230,46 @@ const uploadBanner = async (req, res) => {
   }
 };
 
+// POST /api/v1/school/upload-job-poster
+const uploadJobPoster = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    let posterUrl = '';
+
+    if (req.file) {
+      const buffer = req.file.buffer || (req.file.path ? fs.readFileSync(req.file.path) : null);
+      if (!buffer) {
+        return res.status(400).json({ success: false, message: 'Invalid or empty poster file provided.' });
+      }
+      const ext = path.extname(req.file.originalname || '') || '.jpg';
+      const filename = req.file.filename || `poster-${userId}-${Date.now()}${ext}`;
+      posterUrl = await webdavService.uploadFile('jobs', filename, buffer, req.file.mimetype || 'image/jpeg');
+    } else if (req.body?.posterBase64) {
+      const base64Data = req.body.posterBase64.replace(/^data:image\/\w+;base64,/, '');
+      const buffer = Buffer.from(base64Data, 'base64');
+      const filename = `poster-${userId}-${Date.now()}.jpg`;
+      posterUrl = await webdavService.uploadFile('jobs', filename, buffer, 'image/jpeg');
+    } else {
+      return res.status(400).json({
+        success: false,
+        message: 'No poster file or base64 image data provided.'
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'Job poster uploaded successfully.',
+      data: { posterUrl }
+    });
+  } catch (error) {
+    console.error('uploadJobPoster Error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to upload job poster.'
+    });
+  }
+};
+
 // POST /api/v1/school/jobs
 const postJob = async (req, res) => {
   try {
@@ -254,11 +294,14 @@ const postJob = async (req, res) => {
       benefits,
       city,
       state,
-      deadline
+      deadline,
+      posterUrl,
+      poster_url
     } = req.body;
 
     const jobCity = (city || school.city || '').trim();
     const jobState = (state || school.state || '').trim();
+    const finalPosterUrl = (posterUrl || poster_url || '').trim() || null;
 
     if (!title || !designation || !subject || !description || !jobCity || !jobState) {
       return res.status(400).json({
@@ -272,8 +315,8 @@ const postJob = async (req, res) => {
 
     const result = await query(
       `INSERT INTO jobs 
-       (school_id, title, designation, subject, qualification_required, experience_required, salary_min, salary_max, salary_negotiable, job_type, openings, description, responsibilities, benefits, city, state, deadline, status, share_code)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (school_id, title, designation, subject, qualification_required, experience_required, salary_min, salary_max, salary_negotiable, job_type, openings, description, responsibilities, benefits, city, state, deadline, status, share_code, poster_url)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         school.id,
         title.trim(),
@@ -293,7 +336,8 @@ const postJob = async (req, res) => {
         jobState,
         deadline || null,
         'active',
-        shareCode
+        shareCode,
+        finalPosterUrl
       ]
     );
 
@@ -368,8 +412,12 @@ const updateJob = async (req, res) => {
     const {
       title, designation, subject, qualificationRequired, experienceRequired,
       salaryMin, salaryMax, salaryNegotiable, jobType, openings, description,
-      responsibilities, benefits, city, state, deadline, status
+      responsibilities, benefits, city, state, deadline, status, posterUrl, poster_url
     } = req.body;
+
+    const finalPosterUrl = (posterUrl !== undefined || poster_url !== undefined)
+      ? ((posterUrl || poster_url || '').trim() || null)
+      : undefined;
 
     await query(
       `UPDATE jobs 
@@ -389,12 +437,14 @@ const updateJob = async (req, res) => {
            city = COALESCE(?, city),
            state = COALESCE(?, state),
            deadline = COALESCE(?, deadline),
-           status = COALESCE(?, status)
+           status = COALESCE(?, status),
+           poster_url = COALESCE(?, poster_url)
        WHERE id = ?`,
       [
         title, designation, subject, qualificationRequired, experienceRequired,
         salaryMin, salaryMax, salaryNegotiable, jobType, openings, description,
-        responsibilities, benefits, city, state, deadline, status, jobId
+        responsibilities, benefits, city, state, deadline, status,
+        finalPosterUrl !== undefined ? finalPosterUrl : null, jobId
       ]
     );
 
@@ -1294,6 +1344,7 @@ module.exports = {
   uploadLogo,
   uploadBanner,
   postJob,
+  uploadJobPoster,
   getMyJobs,
   updateJob,
   getJobApplicants,

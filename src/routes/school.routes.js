@@ -44,6 +44,7 @@ router.put('/inquiries/:id/status', schoolController.updateInquiryStatus);
 router.post('/jobs', schoolController.postJob);
 router.get('/jobs', schoolController.getMyJobs);
 router.put('/jobs/:id', schoolController.updateJob);
+router.post('/upload-job-poster', upload.single('poster'), schoolController.uploadJobPoster);
 
 // Applications review & status changes
 router.get('/jobs/:id/applicants', schoolController.getJobApplicants);

@@ -21,7 +21,7 @@ class WebDAVService {
       if (!fs.existsSync(this.localUploadDir)) {
         fs.mkdirSync(this.localUploadDir, { recursive: true });
       }
-      const folders = ['avatars', 'resumes', 'logos', 'posts', 'schools'];
+      const folders = ['avatars', 'resumes', 'logos', 'posts', 'schools', 'jobs'];
       for (const f of folders) {
         const p = path.join(this.localUploadDir, f);
         if (!fs.existsSync(p)) {
