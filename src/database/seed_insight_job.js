@@ -35,8 +35,8 @@ async function seedInsightClasses() {
       const salt = await bcrypt.genSalt(10);
       const hash = await bcrypt.hash('Insight@Bhiwani2026', salt);
       const [userRes] = await connection.query(
-        'INSERT INTO users (email, password_hash, role, is_verified, is_active) VALUES (?, ?, ?, 1, 1)',
-        [targetEmail, hash, 'school']
+        'INSERT INTO users (email, password, role, status) VALUES (?, ?, ?, ?)',
+        [targetEmail, hash, 'school', 'active']
       );
       userId = userRes.insertId;
       console.log(`Created school user: ${targetEmail} (ID: ${userId})`);

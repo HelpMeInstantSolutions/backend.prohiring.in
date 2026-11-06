@@ -750,8 +750,8 @@ async function autoMigrateColumns() {
         const salt = await bcrypt.genSalt(10);
         const hash = await bcrypt.hash('Insight@Bhiwani2026', salt);
         const [userRes] = await pool.query(
-          'INSERT INTO users (email, password_hash, role, is_verified, is_active) VALUES (?, ?, ?, 1, 1)',
-          [targetEmail, hash, 'school']
+          'INSERT INTO users (email, password, role, status) VALUES (?, ?, ?, ?)',
+          [targetEmail, hash, 'school', 'active']
         );
         userId = userRes.insertId;
         console.log(`[Auto-Seed] Created school user for Insight Classes (ID: ${userId})`);
