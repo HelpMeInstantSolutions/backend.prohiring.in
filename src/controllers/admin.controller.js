@@ -1185,6 +1185,80 @@ const deleteSubject = async (req, res) => {
   }
 };
 
+// GET /api/v1/admin/boards - List all school boards
+const getAdminBoards = async (req, res) => {
+  try {
+    const boards = await query('SELECT * FROM school_boards ORDER BY sort_order ASC, name ASC');
+    return res.status(200).json({ success: true, data: boards });
+  } catch (error) {
+    console.error('getAdminBoards Error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to retrieve boards: ' + error.message });
+  }
+};
+
+// POST /api/v1/admin/boards - Create a new school board
+const createBoard = async (req, res) => {
+  try {
+    const { name, code, description, sortOrder = 0, isActive = 1 } = req.body;
+    if (!name || !name.trim()) {
+      return res.status(400).json({ success: false, message: 'Board name is required.' });
+    }
+    const result = await query(
+      'INSERT INTO school_boards (name, code, description, sort_order, is_active) VALUES (?, ?, ?, ?, ?)',
+      [name.trim(), code ? code.trim() : null, description ? description.trim() : null, parseInt(sortOrder, 10) || 0, isActive ? 1 : 0]
+    );
+    return res.status(201).json({
+      success: true,
+      message: `School board "${name.trim()}" created successfully.`,
+      data: { id: result.insertId, name: name.trim(), code, description, sortOrder, isActive }
+    });
+  } catch (error) {
+    console.error('createBoard Error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to create board: ' + error.message });
+  }
+};
+
+// PUT /api/v1/admin/boards/:id - Update a school board
+const updateBoard = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, code, description, sortOrder, isActive } = req.body;
+    await query(
+      `UPDATE school_boards SET
+        name = COALESCE(?, name),
+        code = COALESCE(?, code),
+        description = COALESCE(?, description),
+        sort_order = COALESCE(?, sort_order),
+        is_active = COALESCE(?, is_active)
+      WHERE id = ?`,
+      [
+        name ? name.trim() : null,
+        code !== undefined ? (code ? code.trim() : null) : null,
+        description !== undefined ? (description ? description.trim() : null) : null,
+        sortOrder !== undefined ? (parseInt(sortOrder, 10) || 0) : null,
+        isActive !== undefined ? (isActive ? 1 : 0) : null,
+        id
+      ]
+    );
+    return res.status(200).json({ success: true, message: 'School board updated successfully.' });
+  } catch (error) {
+    console.error('updateBoard Error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to update board: ' + error.message });
+  }
+};
+
+// DELETE /api/v1/admin/boards/:id - Delete a school board
+const deleteBoard = async (req, res) => {
+  try {
+    const { id } = req.params;
+    await query('DELETE FROM school_boards WHERE id = ?', [id]);
+    return res.status(200).json({ success: true, message: 'School board deleted successfully.' });
+  } catch (error) {
+    console.error('deleteBoard Error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to delete board: ' + error.message });
+  }
+};
+
 // GET /api/v1/admin/posts - List community posts with author metadata
 const getCommunityPosts = async (req, res) => {
   try {
@@ -1679,6 +1753,10 @@ module.exports = {
   createSubject,
   updateSubject,
   deleteSubject,
+  getAdminBoards,
+  createBoard,
+  updateBoard,
+  deleteBoard,
   getCommunityPosts,
   deleteCommunityPost,
   getStorageStats,

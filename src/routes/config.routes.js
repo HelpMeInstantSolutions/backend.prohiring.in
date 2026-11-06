@@ -8,6 +8,9 @@ router.get('/app-settings', configController.getPublicSettings);
 // Public route to get Posts / Designations / Subjects taxonomy
 router.get('/taxonomy', configController.getPublicTaxonomy);
 
+// Public route to get school boards
+router.get('/boards', configController.getPublicBoards);
+
 // Public route to get custom published pages (privacy, terms, etc.)
 router.get('/pages/:slug', configController.getPageBySlug);
 

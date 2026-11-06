@@ -540,13 +540,23 @@ const updateJob = async (req, res) => {
       interviewTime, interview_time, venue
     } = req.body;
 
-    const finalQual = qualificationRequired || qualification || null;
-    const finalExp = experienceRequired || experience_required || null;
-    const finalSalMin = salaryMin !== undefined ? salaryMin : (salary_min !== undefined ? salary_min : null);
-    const finalSalMax = salaryMax !== undefined ? salaryMax : (salary_max !== undefined ? salary_max : null);
+    const parseNumber = (val) => {
+      if (val === undefined || val === null || val === '') return null;
+      const num = parseInt(val, 10);
+      return isNaN(num) ? null : num;
+    };
+
+    const finalQual = (qualificationRequired || qualification || '').trim() || null;
+    const finalExp = (experienceRequired || experience_required || '').trim() || null;
+    const finalSalMin = parseNumber(salaryMin !== undefined ? salaryMin : salary_min);
+    const finalSalMax = parseNumber(salaryMax !== undefined ? salaryMax : salary_max);
+    const finalOpenings = parseNumber(openings);
     const finalSalNeg = salaryNegotiable !== undefined ? (salaryNegotiable ? 1 : 0) : (salary_negotiable !== undefined ? (salary_negotiable ? 1 : 0) : null);
-    const finalJobType = jobType || job_type || null;
-    const finalPostType = postType || post_type || null;
+    const finalJobType = (jobType || job_type || '').trim() || null;
+    const finalPostType = (postType || post_type || '').trim() || null;
+    const finalDeadline = (deadline && String(deadline).trim() !== '') ? String(deadline).trim() : null;
+    const finalStatus = (status && ['active', 'closed', 'draft'].includes(status)) ? status : null;
+
     const finalInterviewTime = (interviewTime !== undefined || interview_time !== undefined) 
       ? ((interviewTime || interview_time || '').trim() || null)
       : undefined;
@@ -583,10 +593,24 @@ const updateJob = async (req, res) => {
              venue = COALESCE(?, venue)
          WHERE id = ?`,
         [
-          title, designation, subject, finalQual, finalExp,
-          finalSalMin, finalSalMax, finalSalNeg, finalJobType, openings, description,
-          responsibilities, benefits, city, state, deadline, status,
-          status,
+          title ? title.trim() : null,
+          designation ? designation.trim() : null,
+          subject ? subject.trim() : null,
+          finalQual,
+          finalExp,
+          finalSalMin,
+          finalSalMax,
+          finalSalNeg,
+          finalJobType,
+          finalOpenings,
+          description ? description.trim() : null,
+          responsibilities ? responsibilities.trim() : null,
+          benefits ? benefits.trim() : null,
+          city ? city.trim() : null,
+          state ? state.trim() : null,
+          finalDeadline,
+          finalStatus,
+          finalStatus,
           finalPosterUrl !== undefined ? finalPosterUrl : null,
           finalPostType,
           finalInterviewTime !== undefined ? finalInterviewTime : null,
@@ -620,10 +644,24 @@ const updateJob = async (req, res) => {
              post_type = COALESCE(?, post_type)
          WHERE id = ?`,
         [
-          title, designation, subject, finalQual, finalExp,
-          finalSalMin, finalSalMax, finalSalNeg, finalJobType, openings, description,
-          responsibilities, benefits, city, state, deadline, status,
-          status,
+          title ? title.trim() : null,
+          designation ? designation.trim() : null,
+          subject ? subject.trim() : null,
+          finalQual,
+          finalExp,
+          finalSalMin,
+          finalSalMax,
+          finalSalNeg,
+          finalJobType,
+          finalOpenings,
+          description ? description.trim() : null,
+          responsibilities ? responsibilities.trim() : null,
+          benefits ? benefits.trim() : null,
+          city ? city.trim() : null,
+          state ? state.trim() : null,
+          finalDeadline,
+          finalStatus,
+          finalStatus,
           finalPosterUrl !== undefined ? finalPosterUrl : null,
           finalPostType,
           jobId
@@ -636,10 +674,10 @@ const updateJob = async (req, res) => {
       message: 'Job vacancy updated successfully.'
     });
   } catch (error) {
-    console.error('updateJob Error:', error);
+    console.error('updateJob Error:', error.message, error.sqlMessage || '', error.sql || '');
     return res.status(500).json({
       success: false,
-      message: 'Failed to update job vacancy.'
+      message: error.sqlMessage || error.message || 'Failed to update job vacancy.'
     });
   }
 };

@@ -417,6 +417,50 @@ If you have questions, inquiries, or notices regarding these Terms of Service, p
       console.warn('Notice during custom_pages initialization:', pageErr.message);
     }
 
+    // Ensure school_boards table exists and seed standard boards
+    try {
+      await connection.query(`
+        CREATE TABLE IF NOT EXISTS \`school_boards\` (
+          \`id\` INT AUTO_INCREMENT PRIMARY KEY,
+          \`name\` VARCHAR(150) NOT NULL UNIQUE,
+          \`code\` VARCHAR(50) DEFAULT NULL,
+          \`description\` VARCHAR(255) DEFAULT NULL,
+          \`sort_order\` INT DEFAULT 0,
+          \`is_active\` BOOLEAN DEFAULT 1,
+          \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          \`updated_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          INDEX \`idx_boards_sort\` (\`sort_order\`, \`name\`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+      `);
+
+      const standardBoards = [
+        ['CBSE', 'CBSE', 'Central Board of Secondary Education', 1],
+        ['ICSE / ISC', 'ICSE', 'Council for the Indian School Certificate Examinations', 2],
+        ['State Board', 'STATE', 'State Board of Secondary & Higher Secondary Education', 3],
+        ['IB (International Baccalaureate)', 'IB', 'International Baccalaureate (PYP / MYP / DP)', 4],
+        ['Cambridge (IGCSE / A-Levels)', 'CAMBRIDGE', 'Cambridge Assessment International Education', 5],
+        ['NIOS', 'NIOS', 'National Institute of Open Schooling', 6],
+        ['None / Academy / Coaching Institute', 'COACHING', 'Coaching Center, Foundation Academy or Competitive Institute', 7],
+        ['Play School / Pre-School', 'PRE_SCHOOL', 'Early Childhood, Play School or Kindergarten', 8],
+        ['Other Educational Board / Autonomous', 'OTHER', 'Autonomous or other educational board', 9]
+      ];
+
+      for (const [bName, bCode, bDesc, bSort] of standardBoards) {
+        await connection.query(
+          `INSERT INTO school_boards (name, code, description, sort_order, is_active)
+           VALUES (?, ?, ?, ?, 1)
+           ON DUPLICATE KEY UPDATE 
+             code = IF(code IS NULL OR code = '', VALUES(code), code),
+             description = IF(description IS NULL OR description = '', VALUES(description), description),
+             sort_order = IF(sort_order = 0, VALUES(sort_order), sort_order)`,
+          [bName, bCode, bDesc, bSort]
+        );
+      }
+      console.log('school_boards table verified and standard boards seeded.');
+    } catch (boardErr) {
+      console.warn('Notice during school_boards initialization:', boardErr.message);
+    }
+
 
 
     console.log('Migration completed successfully!');

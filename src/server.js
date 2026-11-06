@@ -900,6 +900,51 @@ Key Highlights:
       console.warn('[Auto-Migrate] school_inquiries table warning:', inqErr.message);
     }
 
+    // Ensure school_boards table exists and seed standard boards
+    try {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS \`school_boards\` (
+          \`id\` INT AUTO_INCREMENT PRIMARY KEY,
+          \`name\` VARCHAR(150) NOT NULL UNIQUE,
+          \`code\` VARCHAR(50) DEFAULT NULL,
+          \`description\` VARCHAR(255) DEFAULT NULL,
+          \`sort_order\` INT DEFAULT 0,
+          \`is_active\` BOOLEAN DEFAULT 1,
+          \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          \`updated_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          INDEX \`idx_boards_sort\` (\`sort_order\`, \`name\`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+      `);
+
+      const [boardCntRows] = await pool.query('SELECT COUNT(*) as cnt FROM `school_boards`');
+      if (boardCntRows[0]?.cnt === 0) {
+        console.log('[Auto-Migrate] Seeding standard school boards...');
+        const standardBoards = [
+          ['CBSE', 'CBSE', 'Central Board of Secondary Education', 1],
+          ['ICSE / ISC', 'ICSE', 'Council for the Indian School Certificate Examinations', 2],
+          ['State Board', 'STATE', 'State Board of Secondary & Higher Secondary Education', 3],
+          ['IB (International Baccalaureate)', 'IB', 'International Baccalaureate (PYP / MYP / DP)', 4],
+          ['Cambridge (IGCSE / A-Levels)', 'CAMBRIDGE', 'Cambridge Assessment International Education', 5],
+          ['NIOS', 'NIOS', 'National Institute of Open Schooling', 6],
+          ['None / Academy / Coaching Institute', 'COACHING', 'Coaching Center, Foundation Academy or Competitive Institute', 7],
+          ['Play School / Pre-School', 'PRE_SCHOOL', 'Early Childhood, Play School or Kindergarten', 8],
+          ['Other Educational Board / Autonomous', 'OTHER', 'Autonomous or other educational board', 9]
+        ];
+
+        for (const [bName, bCode, bDesc, bSort] of standardBoards) {
+          await pool.query(
+            `INSERT INTO school_boards (name, code, description, sort_order, is_active)
+             VALUES (?, ?, ?, ?, 1)
+             ON DUPLICATE KEY UPDATE code = VALUES(code), description = VALUES(description), sort_order = VALUES(sort_order)`,
+            [bName, bCode, bDesc, bSort]
+          );
+        }
+        console.log('[Auto-Migrate] Standard school boards seeded successfully.');
+      }
+    } catch (sbErr) {
+      console.warn('[Auto-Migrate] school_boards table warning:', sbErr.message);
+    }
+
     console.log('[Auto-Migrate] Teacher profile columns, suggestions, system_settings, and posts/designations taxonomy verified.');
   } catch (err) {
     console.warn('[Auto-Migrate] Column check warning:', err.message);

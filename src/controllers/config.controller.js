@@ -252,6 +252,26 @@ const getPublicTaxonomy = async (req, res) => {
   }
 };
 
+// GET /api/v1/config/boards (Public)
+// Returns active school boards for school and teacher profile affiliation selection
+const getPublicBoards = async (req, res) => {
+  try {
+    const boards = await query(
+      'SELECT id, name, code, description, sort_order FROM school_boards WHERE is_active = 1 ORDER BY sort_order ASC, name ASC'
+    );
+    return res.status(200).json({
+      success: true,
+      data: boards
+    });
+  } catch (error) {
+    console.error('getPublicBoards Error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to retrieve school boards: ' + error.message
+    });
+  }
+};
+
 // GET /api/v1/config/pages/:slug (Public)
 // Returns published custom page content by slug (e.g., privacy, terms)
 const getPageBySlug = async (req, res) => {
@@ -290,6 +310,7 @@ module.exports = {
   testMail,
   testSms,
   getPublicTaxonomy,
+  getPublicBoards,
   getPageBySlug
 };
 

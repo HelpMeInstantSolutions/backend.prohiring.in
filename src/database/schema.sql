@@ -264,5 +264,19 @@ CREATE TABLE IF NOT EXISTS `custom_pages` (
   INDEX `idx_pages_slug` (`slug`, `is_published`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- 16. School Boards / Affiliations Taxonomy
+CREATE TABLE IF NOT EXISTS `school_boards` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `name` VARCHAR(150) NOT NULL UNIQUE,
+  `code` VARCHAR(50) DEFAULT NULL,
+  `description` VARCHAR(255) DEFAULT NULL,
+  `sort_order` INT DEFAULT 0,
+  `is_active` BOOLEAN DEFAULT 1,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX `idx_boards_sort` (`sort_order`, `name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
 
 

@@ -51,6 +51,12 @@ router.post('/subjects', adminController.createSubject);
 router.put('/subjects/:id', adminController.updateSubject);
 router.delete('/subjects/:id', adminController.deleteSubject);
 
+// School Boards Affiliation Management
+router.get('/boards', adminController.getAdminBoards);
+router.post('/boards', adminController.createBoard);
+router.put('/boards/:id', adminController.updateBoard);
+router.delete('/boards/:id', adminController.deleteBoard);
+
 // Dynamic System Settings (Change App Name, Branding, Contact Info)
 router.get('/settings', configController.getAllSettings);
 router.put('/settings', configController.updateSettings);
