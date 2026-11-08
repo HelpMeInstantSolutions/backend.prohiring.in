@@ -220,7 +220,7 @@ Walk-in interview: 10:00 AM to 01:00 PM at School Campus, or send resume to apsu
       {
         slug: 'aps-gardener',
         postType: 'Non-Teaching Staff',
-        designation: 'Gardener / Ground Staff',
+        designation: null,
         subject: 'Campus Maintenance & Landscaping',
         title: 'School Campus Gardener (Mali)',
         openings: 1,

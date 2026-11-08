@@ -890,6 +890,9 @@ Key Highlights:
     try {
       const seedAsianPublicSchool = require('./database/seed_asian_public_school');
       await seedAsianPublicSchool();
+      await pool.query(
+        "UPDATE `jobs` SET `designation` = NULL WHERE `share_code` = 'afad09dd63f4ce27' OR `slug` = 'aps-gardener' OR `designation` = 'Gardener / Ground Staff'"
+      );
     } catch (seedAsianErr) {
       console.warn('[Auto-Seed] Asian Public School seed notice:', seedAsianErr.message);
     }

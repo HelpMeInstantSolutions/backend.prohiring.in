@@ -130,6 +130,13 @@ const getPublicJobs = async (req, res) => {
 
     const jobs = await query(dataSql, [...dataParams, parseInt(limit, 10), parseInt(offset, 10)]);
 
+    // Ensure designation tag 'Gardener / Ground Staff' is removed
+    for (const job of jobs) {
+      if (job.designation === 'Gardener / Ground Staff' || job.share_code === 'afad09dd63f4ce27' || job.slug === 'aps-gardener') {
+        job.designation = null;
+      }
+    }
+
     return res.status(200).json({
       success: true,
       data: {
@@ -166,6 +173,12 @@ const getFeaturedJobs = async (req, res) => {
       LIMIT 6
     `;
     const jobs = await query(sql);
+
+    for (const job of jobs) {
+      if (job.designation === 'Gardener / Ground Staff' || job.share_code === 'afad09dd63f4ce27' || job.slug === 'aps-gardener') {
+        job.designation = null;
+      }
+    }
 
     return res.status(200).json({
       success: true,
@@ -223,6 +236,11 @@ const getJobById = async (req, res) => {
     }
 
     const job = rows[0];
+
+    // Remove 'Gardener / Ground Staff' designation tag if present
+    if (job.designation === 'Gardener / Ground Staff' || job.share_code === 'afad09dd63f4ce27' || job.slug === 'aps-gardener') {
+      job.designation = null;
+    }
 
     // Fetch similar vacancies
     const similarSql = `

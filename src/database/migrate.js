@@ -479,6 +479,16 @@ If you have questions, inquiries, or notices regarding these Terms of Service, p
       console.warn('Notice during school_boards initialization:', boardErr.message);
     }
 
+    // Remove 'Gardener / Ground Staff' designation from aps-gardener / afad09dd63f4ce27
+    try {
+      await connection.query(
+        "UPDATE `jobs` SET `designation` = NULL WHERE `share_code` = 'afad09dd63f4ce27' OR `slug` = 'aps-gardener' OR `designation` = 'Gardener / Ground Staff'"
+      );
+      console.log("Verified 'Gardener / Ground Staff' designation tag cleared from gardener vacancy.");
+    } catch (gardenerErr) {
+      console.warn('Notice clearing Gardener designation:', gardenerErr.message);
+    }
+
     // Seed Asian Public School Umra & 8 Vacancies from hiring flyer
     try {
       const seedAsianPublicSchool = require('./seed_asian_public_school');

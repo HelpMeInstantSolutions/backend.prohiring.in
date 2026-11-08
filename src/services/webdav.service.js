@@ -154,11 +154,15 @@ class WebDAVService {
    */
   async deleteFile(subfolder, filename) {
     if (!subfolder || !filename) return false;
+    let localDeleted = false;
+    let remoteDeleted = false;
+
     // 1. Delete local file
     try {
       const localFilePath = path.join(this.localUploadDir, subfolder, filename);
       if (fs.existsSync(localFilePath)) {
         fs.unlinkSync(localFilePath);
+        localDeleted = true;
       }
     } catch (e) {
       console.warn('[WebDAVService] Local delete notice:', e.message);
@@ -171,23 +175,52 @@ class WebDAVService {
         method: 'DELETE',
         headers: { Authorization: this.authHeader }
       });
-      return res.ok || res.status === 404;
+      remoteDeleted = res.ok || res.status === 404;
     } catch (err) {
       console.error('[WebDAVService] WebDAV DELETE error:', err.message);
-      return false;
     }
+
+    // 3. Clean up database references if any exist so file doesn't reappear in listings
+    if (db && typeof db.query === 'function') {
+      try {
+        const filePattern = `%${filename}%`;
+        const relativeUrl = `/uploads/${subfolder}/${filename}`;
+
+        if (subfolder === 'avatars') {
+          await db.query('UPDATE teacher_profiles SET avatar_url = NULL WHERE avatar_url LIKE ? OR avatar_url = ?', [filePattern, relativeUrl]);
+        } else if (subfolder === 'resumes') {
+          await db.query('UPDATE teacher_profiles SET resume_url = NULL WHERE resume_url LIKE ? OR resume_url = ?', [filePattern, relativeUrl]);
+        } else if (subfolder === 'logos') {
+          await db.query('UPDATE school_profiles SET logo_url = NULL WHERE logo_url LIKE ? OR logo_url = ?', [filePattern, relativeUrl]);
+        } else if (subfolder === 'schools') {
+          await db.query('UPDATE school_profiles SET banner_url = NULL WHERE banner_url LIKE ? OR banner_url = ?', [filePattern, relativeUrl]);
+        } else if (subfolder === 'jobs') {
+          await db.query('UPDATE jobs SET poster_url = NULL WHERE poster_url LIKE ? OR poster_url = ?', [filePattern, relativeUrl]);
+        } else if (subfolder === 'posts') {
+          await db.query('UPDATE community_posts SET image_url = NULL WHERE image_url LIKE ? OR image_url = ?', [filePattern, relativeUrl]);
+        }
+      } catch (dbErr) {
+        console.warn('[WebDAVService] Database reference cleanup notice:', dbErr.message);
+      }
+    }
+
+    return true;
   }
 
   /**
    * Delete file using relative or full URL
    * e.g. '/uploads/avatars/avatar-123.jpg'
    */
-  async deleteByUrl(url) {
-    if (!url || typeof url !== 'string') return false;
-    const match = url.match(/\/uploads\/([^\/]+)\/([^\/?#]+)/i);
-    if (match) {
-      const [, subfolder, filename] = match;
-      return await this.deleteFile(subfolder, filename);
+  async deleteByUrl(url, fallbackSubfolder = null, fallbackFilename = null) {
+    if (url && typeof url === 'string') {
+      const match = url.match(/\/uploads\/([^\/]+)\/([^\/?#]+)/i);
+      if (match) {
+        const [, subfolder, filename] = match;
+        return await this.deleteFile(subfolder, filename);
+      }
+    }
+    if (fallbackSubfolder && fallbackFilename) {
+      return await this.deleteFile(fallbackSubfolder, fallbackFilename);
     }
     return false;
   }
@@ -262,7 +295,7 @@ class WebDAVService {
    * @param {string} [subfolder] - optional filter
    */
   async listFiles(subfolder = null) {
-    const folders = subfolder ? [subfolder] : ['avatars', 'resumes', 'logos', 'schools', 'posts'];
+    const folders = subfolder ? [subfolder] : ['avatars', 'resumes', 'logos', 'schools', 'posts', 'jobs'];
     const fileMap = new Map();
 
     // 1. Fetch remote Nextcloud WebDAV files in parallel
@@ -314,7 +347,7 @@ class WebDAVService {
     // 3. Scan database for any referenced upload URLs to ensure complete visibility
     if (db && typeof db.query === 'function') {
       try {
-        const addDbAsset = (rawUrl) => {
+        const addDbAsset = (rawUrl, extraMeta = {}) => {
           if (!rawUrl || typeof rawUrl !== 'string') return;
           const match = rawUrl.match(/\/uploads\/([^\/]+)\/([^\/?#]+)/i);
           if (match) {
@@ -329,9 +362,18 @@ class WebDAVService {
                   sizeBytes: 0,
                   sizeFormatted: 'Uploaded',
                   mimeType: this.getMimeType(path.extname(fname).toLowerCase()),
-                  modifiedAt: new Date(),
-                  source: 'database-record'
+                  modifiedAt: extraMeta.createdAt ? new Date(extraMeta.createdAt) : new Date(),
+                  source: 'database-record',
+                  ...extraMeta
                 });
+              } else {
+                const existing = fileMap.get(url);
+                if (extraMeta.jobTitle) existing.jobTitle = extraMeta.jobTitle;
+                if (extraMeta.deadline) existing.deadline = extraMeta.deadline;
+                if (extraMeta.createdAt) {
+                  existing.createdAt = extraMeta.createdAt;
+                  existing.modifiedAt = extraMeta.createdAt;
+                }
               }
             }
           }
@@ -364,6 +406,16 @@ class WebDAVService {
         for (const p of posts) {
           addDbAsset(p.image_url);
         }
+
+        // Include vacancy recruitment flyers & posters from jobs table
+        const jobs = await db.query('SELECT poster_url, title, deadline, created_at FROM jobs WHERE poster_url IS NOT NULL');
+        for (const j of jobs) {
+          addDbAsset(j.poster_url, {
+            jobTitle: j.title,
+            deadline: j.deadline,
+            createdAt: j.created_at
+          });
+        }
       } catch (dbErr) {
         console.warn('[WebDAVService] DB scan notice:', dbErr.message);
       }
@@ -380,7 +432,7 @@ class WebDAVService {
    */
   async getStorageStats() {
     const allFiles = await this.listFiles();
-    const folders = ['avatars', 'resumes', 'logos', 'schools', 'posts'];
+    const folders = ['avatars', 'resumes', 'logos', 'schools', 'posts', 'jobs'];
     const categories = {};
     let totalFiles = allFiles.length;
     let totalSizeBytes = 0;

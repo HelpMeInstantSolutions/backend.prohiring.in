@@ -1390,13 +1390,16 @@ const deleteStorageFile = async (req, res) => {
     const { subfolder, filename, url } = req.body;
     let deleted = false;
     if (url) {
-      deleted = await webdavService.deleteByUrl(url);
+      deleted = await webdavService.deleteByUrl(url, subfolder, filename);
     } else if (subfolder && filename) {
       deleted = await webdavService.deleteFile(subfolder, filename);
     } else {
       return res.status(400).json({ success: false, message: 'Specify either file url or subfolder and filename.' });
     }
-    return res.status(200).json({ success: true, message: deleted ? 'File deleted successfully.' : 'File could not be removed.' });
+    if (!deleted) {
+      return res.status(400).json({ success: false, message: 'File could not be removed from storage.' });
+    }
+    return res.status(200).json({ success: true, message: 'File deleted successfully.' });
   } catch (error) {
     console.error('deleteStorageFile Error:', error);
     return res.status(500).json({ success: false, message: 'Failed to delete storage file.' });
