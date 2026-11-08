@@ -479,10 +479,17 @@ If you have questions, inquiries, or notices regarding these Terms of Service, p
       console.warn('Notice during school_boards initialization:', boardErr.message);
     }
 
+    // Ensure designation in jobs can be NULL or empty
+    try {
+      await connection.query("ALTER TABLE `jobs` MODIFY COLUMN `designation` VARCHAR(150) NULL DEFAULT NULL;");
+    } catch (e) {
+      console.warn('Notice modifying designation column nullability:', e.message);
+    }
+
     // Remove 'Gardener / Ground Staff' designation from aps-gardener / afad09dd63f4ce27
     try {
       await connection.query(
-        "UPDATE `jobs` SET `designation` = NULL WHERE `share_code` = 'afad09dd63f4ce27' OR `slug` = 'aps-gardener' OR `designation` = 'Gardener / Ground Staff'"
+        "UPDATE `jobs` SET `designation` = '' WHERE `share_code` = 'afad09dd63f4ce27' OR `slug` = 'aps-gardener' OR `designation` = 'Gardener / Ground Staff'"
       );
       console.log("Verified 'Gardener / Ground Staff' designation tag cleared from gardener vacancy.");
     } catch (gardenerErr) {
