@@ -496,14 +496,6 @@ If you have questions, inquiries, or notices regarding these Terms of Service, p
       console.warn('Notice clearing Gardener designation:', gardenerErr.message);
     }
 
-    // Seed Asian Public School Umra & 8 Vacancies from hiring flyer
-    try {
-      const seedAsianPublicSchool = require('./seed_asian_public_school');
-      await seedAsianPublicSchool();
-    } catch (asianErr) {
-      console.warn('Notice seeding Asian Public School:', asianErr.message);
-    }
-
     console.log('Migration completed successfully!');
   } catch (error) {
     console.error('Migration failed:', error);

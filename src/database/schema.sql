@@ -91,7 +91,7 @@ CREATE TABLE IF NOT EXISTS `jobs` (
   `id` INT AUTO_INCREMENT PRIMARY KEY,
   `school_id` INT NOT NULL,
   `title` VARCHAR(200) NOT NULL,
-  `designation` VARCHAR(100) NOT NULL,
+  `designation` VARCHAR(150) DEFAULT NULL,
   `subject` VARCHAR(100) NOT NULL,
   `qualification_required` VARCHAR(150) NOT NULL,
   `experience_required` VARCHAR(50) DEFAULT '1-3 Years',
@@ -279,6 +279,77 @@ CREATE TABLE IF NOT EXISTS `school_boards` (
   INDEX `idx_boards_sort` (`sort_order`, `name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- 17. User Devices (Android FCM push notification tokens)
+CREATE TABLE IF NOT EXISTS `user_devices` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `user_id` INT NOT NULL,
+  `fcm_token` VARCHAR(255) NOT NULL UNIQUE,
+  `device_type` VARCHAR(50) DEFAULT 'android',
+  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX `idx_user_device` (`user_id`),
+  FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- 18. Qualification Suggestions (Autocomplete for universities, institutes, degrees)
+CREATE TABLE IF NOT EXISTS `qualification_suggestions` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `type` ENUM('university', 'institute', 'degree') NOT NULL,
+  `name` VARCHAR(255) NOT NULL,
+  `use_count` INT DEFAULT 1,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY `uniq_type_name` (`type`, `name`),
+  INDEX `idx_type_name` (`type`, `name`(50))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- 19. Job Taxonomy: Categories, Designations, and Subjects
+CREATE TABLE IF NOT EXISTS `job_categories` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `name` VARCHAR(100) NOT NULL,
+  `slug` VARCHAR(100) NOT NULL UNIQUE,
+  `description` VARCHAR(255) DEFAULT NULL,
+  `sort_order` INT DEFAULT 0,
+  `is_active` BOOLEAN DEFAULT 1,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS `job_designations` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `category_id` INT NOT NULL,
+  `name` VARCHAR(150) NOT NULL,
+  `code` VARCHAR(50) DEFAULT NULL,
+  `description` VARCHAR(255) DEFAULT NULL,
+  `sort_order` INT DEFAULT 0,
+  `is_active` BOOLEAN DEFAULT 1,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  INDEX `idx_category_id` (`category_id`),
+  FOREIGN KEY (`category_id`) REFERENCES `job_categories` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `job_subjects` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `designation_id` INT NOT NULL,
+  `name` VARCHAR(150) NOT NULL,
+  `code` VARCHAR(50) DEFAULT NULL,
+  `sort_order` INT DEFAULT 0,
+  `is_active` BOOLEAN DEFAULT 1,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  INDEX `idx_designation_id` (`designation_id`),
+  FOREIGN KEY (`designation_id`) REFERENCES `job_designations` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 20. School Inquiries (Public inquiries and messages to schools)
+CREATE TABLE IF NOT EXISTS `school_inquiries` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `school_id` INT NOT NULL,
+  `sender_name` VARCHAR(150) NOT NULL,
+  `sender_email` VARCHAR(150) DEFAULT NULL,
+  `sender_phone` VARCHAR(25) DEFAULT NULL,
+  `subject` VARCHAR(255) DEFAULT NULL,
+  `message` TEXT NOT NULL,
+  `sender_role` VARCHAR(50) DEFAULT 'visitor',
+  `sender_user_id` INT DEFAULT NULL,
+  `status` ENUM('unread', 'read', 'replied', 'archived') DEFAULT 'unread',
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  INDEX `idx_inquiries_school` (`school_id`, `created_at` DESC),
+  FOREIGN KEY (`school_id`) REFERENCES `school_profiles` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
