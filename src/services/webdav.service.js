@@ -186,25 +186,54 @@ class WebDAVService {
       console.error('[WebDAVService] WebDAV DELETE error:', err.message);
     }
 
-    // 3. Clean up database references if any exist so file doesn't reappear in listings
+    // 3. Clean up database references across all tables so file doesn't reappear in listings
     if (db && typeof db.query === 'function') {
       try {
         const filePattern = `%${rawFilename}%`;
         const relativeUrl = `/uploads/${subfolder}/${rawFilename}`;
 
-        if (subfolder === 'avatars') {
+        // Teacher profiles: avatar & resume
+        try {
           await db.query('UPDATE teacher_profiles SET avatar_url = NULL WHERE avatar_url LIKE ? OR avatar_url = ?', [filePattern, relativeUrl]);
-        } else if (subfolder === 'resumes') {
+        } catch (_) {}
+        try {
           await db.query('UPDATE teacher_profiles SET resume_url = NULL WHERE resume_url LIKE ? OR resume_url = ?', [filePattern, relativeUrl]);
-        } else if (subfolder === 'logos') {
+        } catch (_) {}
+
+        // School profiles: logo & banner
+        try {
           await db.query('UPDATE school_profiles SET logo_url = NULL WHERE logo_url LIKE ? OR logo_url = ?', [filePattern, relativeUrl]);
-        } else if (subfolder === 'schools') {
+        } catch (_) {}
+        try {
           await db.query('UPDATE school_profiles SET banner_url = NULL WHERE banner_url LIKE ? OR banner_url = ?', [filePattern, relativeUrl]);
-        } else if (subfolder === 'jobs') {
+        } catch (_) {}
+
+        // School profiles: campus_photos JSON array
+        try {
+          const schoolsWithPhotos = await db.query('SELECT id, campus_photos FROM school_profiles WHERE campus_photos LIKE ?', [filePattern]);
+          for (const s of schoolsWithPhotos) {
+            if (s.campus_photos) {
+              const photos = typeof s.campus_photos === 'string' ? JSON.parse(s.campus_photos) : s.campus_photos;
+              if (Array.isArray(photos)) {
+                const updatedPhotos = photos.filter((p) => {
+                  const u = typeof p === 'string' ? p : p?.url;
+                  return !u || (!u.includes(rawFilename) && u !== relativeUrl);
+                });
+                await db.query('UPDATE school_profiles SET campus_photos = ? WHERE id = ?', [JSON.stringify(updatedPhotos), s.id]);
+              }
+            }
+          }
+        } catch (_) {}
+
+        // Jobs: recruitment flyer / poster_url
+        try {
           await db.query('UPDATE jobs SET poster_url = NULL WHERE poster_url LIKE ? OR poster_url = ?', [filePattern, relativeUrl]);
-        } else if (subfolder === 'posts') {
+        } catch (_) {}
+
+        // Community posts: media_url
+        try {
           await db.query('UPDATE community_posts SET media_url = NULL WHERE media_url LIKE ? OR media_url = ?', [filePattern, relativeUrl]);
-        }
+        } catch (_) {}
       } catch (dbErr) {
         console.warn('[WebDAVService] Database reference cleanup notice:', dbErr.message);
       }
@@ -352,45 +381,63 @@ class WebDAVService {
 
     // 3. Scan database for any referenced upload URLs to ensure complete visibility
     if (db && typeof db.query === 'function') {
-      try {
-        const addDbAsset = (rawUrl, extraMeta = {}) => {
-          if (!rawUrl || typeof rawUrl !== 'string') return;
-          const match = rawUrl.match(/\/uploads\/([^\/]+)\/([^\/?#]+)/i);
-          if (match) {
-            const [, folder, fname] = match;
-            if (folders.includes(folder)) {
-              const url = `/uploads/${folder}/${fname}`;
-              if (!fileMap.has(url)) {
-                fileMap.set(url, {
-                  name: fname,
-                  subfolder: folder,
-                  url,
-                  sizeBytes: 0,
-                  sizeFormatted: 'Uploaded',
-                  mimeType: this.getMimeType(path.extname(fname).toLowerCase()),
-                  modifiedAt: extraMeta.createdAt ? new Date(extraMeta.createdAt) : new Date(),
-                  source: 'database-record',
-                  ...extraMeta
-                });
-              } else {
-                const existing = fileMap.get(url);
-                if (extraMeta.jobTitle) existing.jobTitle = extraMeta.jobTitle;
-                if (extraMeta.deadline) existing.deadline = extraMeta.deadline;
-                if (extraMeta.createdAt) {
-                  existing.createdAt = extraMeta.createdAt;
-                  existing.modifiedAt = extraMeta.createdAt;
-                }
+      const addDbAsset = (rawUrl, extraMeta = {}) => {
+        if (!rawUrl || typeof rawUrl !== 'string') return;
+        const match = rawUrl.match(/\/(?:uploads|prohiring)\/([^\/]+)\/([^\/?#]+)/i);
+        if (match) {
+          const [, folder, fname] = match;
+          if (folders.includes(folder)) {
+            const url = `/uploads/${folder}/${fname}`;
+            const decodedFname = decodeURIComponent(fname);
+            const localFilePath = path.join(this.localUploadDir, folder, decodedFname);
+            const existsLocally = fs.existsSync(localFilePath);
+
+            if (!fileMap.has(url)) {
+              let sizeBytes = 0;
+              let modifiedAt = extraMeta.createdAt ? new Date(extraMeta.createdAt) : new Date();
+              if (existsLocally) {
+                try {
+                  const stats = fs.statSync(localFilePath);
+                  sizeBytes = stats.size;
+                  modifiedAt = stats.mtime;
+                } catch (_) {}
+              }
+
+              fileMap.set(url, {
+                name: decodedFname,
+                subfolder: folder,
+                url,
+                sizeBytes,
+                sizeFormatted: sizeBytes > 0 ? this.formatBytes(sizeBytes) : 'Uploaded',
+                mimeType: this.getMimeType(path.extname(decodedFname).toLowerCase()),
+                modifiedAt,
+                source: existsLocally ? 'local-disk' : 'database-record',
+                ...extraMeta
+              });
+            } else {
+              const existing = fileMap.get(url);
+              if (extraMeta.jobTitle) existing.jobTitle = extraMeta.jobTitle;
+              if (extraMeta.deadline) existing.deadline = extraMeta.deadline;
+              if (extraMeta.createdAt) {
+                existing.createdAt = extraMeta.createdAt;
+                existing.modifiedAt = extraMeta.createdAt;
               }
             }
           }
-        };
+        }
+      };
 
+      try {
         const teachers = await db.query('SELECT avatar_url, resume_url FROM teacher_profiles WHERE avatar_url IS NOT NULL OR resume_url IS NOT NULL');
         for (const t of teachers) {
           addDbAsset(t.avatar_url);
           addDbAsset(t.resume_url);
         }
+      } catch (tErr) {
+        console.warn('[WebDAVService] Teacher asset scan notice:', tErr.message);
+      }
 
+      try {
         const schools = await db.query('SELECT logo_url, banner_url, campus_photos FROM school_profiles WHERE logo_url IS NOT NULL OR banner_url IS NOT NULL OR campus_photos IS NOT NULL');
         for (const s of schools) {
           addDbAsset(s.logo_url);
@@ -407,13 +454,21 @@ class WebDAVService {
             } catch (_) {}
           }
         }
+      } catch (sErr) {
+        console.warn('[WebDAVService] School asset scan notice:', sErr.message);
+      }
 
-        const posts = await db.query('SELECT image_url FROM community_posts WHERE image_url IS NOT NULL');
+      try {
+        const posts = await db.query('SELECT media_url FROM community_posts WHERE media_url IS NOT NULL');
         for (const p of posts) {
-          addDbAsset(p.image_url);
+          addDbAsset(p.media_url);
         }
+      } catch (pErr) {
+        console.warn('[WebDAVService] Community post asset scan notice:', pErr.message);
+      }
 
-        // Include vacancy recruitment flyers & posters from jobs table
+      // Include vacancy recruitment flyers & posters from jobs table
+      try {
         const jobs = await db.query('SELECT poster_url, title, deadline, created_at FROM jobs WHERE poster_url IS NOT NULL');
         for (const j of jobs) {
           addDbAsset(j.poster_url, {
@@ -422,8 +477,8 @@ class WebDAVService {
             createdAt: j.created_at
           });
         }
-      } catch (dbErr) {
-        console.warn('[WebDAVService] DB scan notice:', dbErr.message);
+      } catch (jErr) {
+        console.warn('[WebDAVService] Job flyer scan notice:', jErr.message);
       }
     }
 

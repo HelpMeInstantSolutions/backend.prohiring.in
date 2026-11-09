@@ -1364,6 +1364,9 @@ const deleteCommunityPost = async (req, res) => {
 // GET /api/v1/admin/storage/stats
 const getStorageStats = async (req, res) => {
   try {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
     const stats = await webdavService.getStorageStats();
     return res.status(200).json({ success: true, data: stats });
   } catch (error) {
@@ -1375,6 +1378,9 @@ const getStorageStats = async (req, res) => {
 // GET /api/v1/admin/storage/files
 const getStorageFiles = async (req, res) => {
   try {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
     const { subfolder } = req.query;
     const files = await webdavService.listFiles(subfolder || null);
     return res.status(200).json({ success: true, data: { files, total: files.length } });
