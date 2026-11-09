@@ -520,6 +520,187 @@ If you have questions, inquiries, or notices regarding these Terms of Service, p
       console.warn('Notice clearing Gardener designation:', gardenerErr.message);
     }
 
+    // Ensure standard taxonomy (job_categories, job_designations, job_subjects) is seeded if empty
+    // Mirroring https://admin.prohiring.in/categories
+    try {
+      const [catCountRows] = await connection.query('SELECT COUNT(*) as count FROM job_categories');
+      if (catCountRows[0].count === 0) {
+        console.log('Seeding standard job categories, designations, and subjects taxonomy...');
+        const standardTaxonomy = [
+          {
+            name: 'Teaching Staff',
+            slug: 'teaching-staff',
+            description: 'Academic faculty and classroom teachers for Pre-Primary, Primary, Secondary and Senior Secondary classes.',
+            sort_order: 1,
+            designations: [
+              {
+                name: 'PGT (Post Graduate Teacher - Classes XI-XII)',
+                code: 'PGT',
+                description: 'Senior Secondary teachers for Classes 11 and 12.',
+                sort_order: 1,
+                subjects: ['Mathematics', 'Physics', 'Chemistry', 'Biology', 'English Core', 'Hindi Core', 'Computer Science / IP', 'Accountancy', 'Business Studies', 'Economics', 'History', 'Political Science', 'Geography', 'Physical Education', 'Psychology', 'Sociology']
+              },
+              {
+                name: 'TGT (Trained Graduate Teacher - Classes VI-X)',
+                code: 'TGT',
+                description: 'Middle and Secondary teachers for Classes 6 to 10.',
+                sort_order: 2,
+                subjects: ['Science (Physics/Chemistry/Bio)', 'Mathematics', 'English', 'Hindi', 'Social Science (SST)', 'Sanskrit', 'Computer Science / IT', 'Art & Craft']
+              },
+              {
+                name: 'PRT (Primary Teacher - Classes I-V)',
+                code: 'PRT',
+                description: 'Primary school teachers for Classes 1 to 5.',
+                sort_order: 3,
+                subjects: ['All Subjects (General PRT)', 'English', 'Mathematics', 'EVS / Environmental Science', 'Hindi', 'Social Studies']
+              },
+              {
+                name: 'NTT (Nursery / Kindergarten / Pre-Primary)',
+                code: 'NTT',
+                description: 'Early childhood educators, mother teachers, and kindergarten specialists.',
+                sort_order: 4,
+                subjects: ['Early Childhood Education (ECCE)', 'Phonics & Rhymes', 'Activity & Creative Play']
+              },
+              {
+                name: 'Principal / Vice Principal',
+                code: 'LEADERSHIP',
+                description: 'School institutional heads, academic coordinators and vice-principals.',
+                sort_order: 5,
+                subjects: ['Academic Administration', 'School Leadership & Operations']
+              },
+              {
+                name: 'Special Educator',
+                code: 'SPECIAL_ED',
+                description: 'Special education and inclusive learning specialists.',
+                sort_order: 6,
+                subjects: ['Special Education', 'Learning Disability Support']
+              }
+            ]
+          },
+          {
+            name: 'Non-Teaching Staff',
+            slug: 'non-teaching-staff',
+            description: 'Administrative, clerical, accounts, laboratory, and campus operations staff.',
+            sort_order: 2,
+            designations: [
+              {
+                name: 'Clerk / Office Assistant',
+                code: 'CLERK',
+                description: 'Office clerks, data entry operators, and administrative assistants.',
+                sort_order: 1,
+                subjects: ['General Administration', 'Student Admissions & Records', 'Front Office Operations', 'Data Entry & Documentation']
+              },
+              {
+                name: 'Accountant / Cashier',
+                code: 'ACCOUNTS',
+                description: 'School accountants, cashiers, and finance managers.',
+                sort_order: 2,
+                subjects: ['School Accounts & Tally ERP', 'Student Fee Collection', 'Payroll & Staff Salaries', 'Taxation & Audits']
+              },
+              {
+                name: 'Librarian / Assistant Librarian',
+                code: 'LIBRARY',
+                description: 'Librarians and resource center managers.',
+                sort_order: 3,
+                subjects: ['Library Science & Cataloging', 'Digital Library Operations', 'Resource & Book Management']
+              },
+              {
+                name: 'Lab Assistant / Lab Technician',
+                code: 'LAB',
+                description: 'Science, computer, and STEM laboratory technicians.',
+                sort_order: 4,
+                subjects: ['Physics Laboratory', 'Chemistry Laboratory', 'Biology Laboratory', 'Computer Hardware & Networking Lab']
+              },
+              {
+                name: 'Receptionist / Front Desk Executive',
+                code: 'FRONT_DESK',
+                description: 'Front desk receptionists and parent communication officers.',
+                sort_order: 5,
+                subjects: ['Front Desk & Reception', 'Parent Communication & Inquiries', 'Tele-calling & Admission Helpdesk']
+              },
+              {
+                name: 'Counselor / Student Wellness',
+                code: 'COUNSELOR',
+                description: 'Student counselors, career guides, and psychologists.',
+                sort_order: 6,
+                subjects: ['Student Career Guidance', 'Child Psychology & Behavioral Counseling']
+              },
+              {
+                name: 'Peon / Multitasking Staff (MTS)',
+                code: 'MTS',
+                description: 'Support staff, messengers, peons, and campus utility assistants.',
+                sort_order: 7,
+                subjects: ['Office Support & Dispatch', 'Campus Maintenance & Utility']
+              },
+              {
+                name: 'Transport Staff / Bus Driver',
+                code: 'TRANSPORT',
+                description: 'School bus drivers, conductors, and transport coordinators.',
+                sort_order: 8,
+                subjects: ['Heavy Bus Driving (RTO Licensed)', 'School Van Operations', 'Transport Supervisor']
+              }
+            ]
+          },
+          {
+            name: 'Sports, Arts & Activity Staff',
+            slug: 'sports-arts-activity',
+            description: 'Physical education teachers, sports coaches, music, dance, and arts educators.',
+            sort_order: 3,
+            designations: [
+              {
+                name: 'Physical Education Teacher (PET) / Sports Coach',
+                code: 'PET',
+                description: 'Physical training instructors and specialized sports coaches.',
+                sort_order: 1,
+                subjects: ['Cricket Coaching', 'Football Coaching', 'Basketball Coaching', 'Badminton & Tennis', 'Athletics & Track', 'Yoga & Meditation']
+              },
+              {
+                name: 'Music & Dance Teacher',
+                code: 'MUSIC_DANCE',
+                description: 'Vocal, instrumental music, and classical/western dance instructors.',
+                sort_order: 2,
+                subjects: ['Classical Vocal Music', 'Western Music & Choir', 'Keyboard & Piano', 'Guitar & Instrumental', 'Classical Indian Dance', 'Western Dance']
+              },
+              {
+                name: 'Art & Craft / Fine Arts Teacher',
+                code: 'ART_CRAFT',
+                description: 'Drawing, painting, fine arts, and crafting teachers.',
+                sort_order: 3,
+                subjects: ['Drawing & Painting', 'Clay Modeling & Pottery', 'Origami & Crafting', 'Commercial & Digital Art']
+              }
+            ]
+          }
+        ];
+
+        for (const cat of standardTaxonomy) {
+          const [catRes] = await connection.query(
+            'INSERT INTO job_categories (name, slug, description, sort_order, is_active) VALUES (?, ?, ?, ?, 1)',
+            [cat.name, cat.slug, cat.description, cat.sort_order]
+          );
+          const catId = catRes.insertId;
+
+          for (const desig of cat.designations) {
+            const [desigRes] = await connection.query(
+              'INSERT INTO job_designations (category_id, name, code, description, sort_order, is_active) VALUES (?, ?, ?, ?, ?, 1)',
+              [catId, desig.name, desig.code, desig.description, desig.sort_order]
+            );
+            const desigId = desigRes.insertId;
+
+            for (let sIdx = 0; sIdx < desig.subjects.length; sIdx++) {
+              const subjName = desig.subjects[sIdx];
+              await connection.query(
+                'INSERT INTO job_subjects (designation_id, name, sort_order, is_active) VALUES (?, ?, ?, 1)',
+                [desigId, subjName, sIdx + 1]
+              );
+            }
+          }
+        }
+        console.log('Standard job categories, designations, and subjects seeded successfully.');
+      }
+    } catch (taxErr) {
+      console.warn('Notice during taxonomy initialization:', taxErr.message);
+    }
+
     console.log('Migration completed successfully!');
   } catch (error) {
     console.error('Migration failed:', error);
