@@ -1,15 +1,18 @@
 const express = require('express');
 const router = express.Router();
 const schoolController = require('../controllers/school.controller');
-const { authenticate } = require('../middlewares/auth.middleware');
+const { authenticate, authenticateOptional } = require('../middlewares/auth.middleware');
 const { authorize } = require('../middlewares/role.middleware');
 const { upload } = require('../middlewares/upload.middleware');
 
-// Public route for public school directory profile
+// Public route for public school directory profile & search
 router.get('/public/:id', schoolController.getPublicSchoolProfile);
 router.get('/search', schoolController.searchSchools);
 
-// All routes below require school role
+// AI Flyer Extraction: Accessible with optional auth so schools & visitors can preview extracted vacancies seamlessly
+router.post('/jobs/extract-from-flyer', authenticateOptional, upload.single('flyer'), schoolController.extractJobsFromFlyer);
+
+// All routes below require authenticated school role
 router.use(authenticate, authorize('school'));
 
 // Dashboard metrics
@@ -37,7 +40,6 @@ router.post('/jobs', schoolController.postJob);
 router.get('/jobs', schoolController.getMyJobs);
 router.put('/jobs/:id', schoolController.updateJob);
 router.post('/upload-job-poster', upload.single('poster'), schoolController.uploadJobPoster);
-router.post('/jobs/extract-from-flyer', upload.single('flyer'), schoolController.extractJobsFromFlyer);
 
 // Applications review & status changes
 router.get('/jobs/:id/applicants', schoolController.getJobApplicants);

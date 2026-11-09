@@ -286,7 +286,7 @@ const extractJobsFromFlyer = async (req, res) => {
   }
 
   try {
-    const userId = req.user.id;
+    const userId = req.user?.id || 'guest';
     let buffer = null;
     let mimeType = 'image/jpeg';
     let filename = `flyer-${userId}-${Date.now()}.jpg`;
@@ -345,7 +345,7 @@ const extractJobsFromFlyer = async (req, res) => {
       res.setHeader('Access-Control-Allow-Origin', req.headers.origin);
       res.setHeader('Access-Control-Allow-Credentials', 'true');
     }
-    return res.status(500).json({
+    return res.status(400).json({
       success: false,
       message: error.message || 'Failed to extract jobs from flyer.'
     });
