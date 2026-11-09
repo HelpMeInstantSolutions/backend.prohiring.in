@@ -23,12 +23,6 @@ const app = express();
 
 const PORT = process.env.PORT || 5000;
 
-// Security & Logger Middleware
-app.use(helmet({
-  crossOriginResourcePolicy: { policy: "cross-origin" }
-}));
-app.use(morgan('dev'));
-
 // CORS configuration supporting ProHiring Web Portal, Admin Panel, and local dev
 const allowedOrigins = [
   'https://prohiring.in',
@@ -52,7 +46,8 @@ if (process.env.ADMIN_URL) {
   });
 }
 
-app.use(cors({
+// Enable CORS at top of middleware stack with full preflight support
+const corsOptions = {
   origin: (origin, callback) => {
     // Allow mobile apps, curl, postman or same-origin (origin is undefined)
     if (!origin || allowedOrigins.includes(origin)) {
@@ -62,9 +57,18 @@ app.use(cors({
     }
   },
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+  methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin', 'Cache-Control', 'Pragma']
+};
+
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
+
+// Security & Logger Middleware
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: "cross-origin" }
 }));
+app.use(morgan('dev'));
 
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
@@ -107,16 +111,24 @@ app.use('/api/v1/notifications', notificationRoutes);
 
 // 404 Route Handler
 app.use((req, res) => {
+  if (req.headers.origin) {
+    res.header('Access-Control-Allow-Origin', req.headers.origin);
+    res.header('Access-Control-Allow-Credentials', 'true');
+  }
   res.status(404).json({
     success: false,
     message: `Endpoint '${req.method} ${req.originalUrl}' not found.`
   });
 });
 
-// Centralized Error Handler
+// Centralized Error Handler (guarantees CORS headers on all errors)
 app.use((err, req, res, next) => {
   console.error('Unhandled Application Error:', err);
-  const statusCode = err.status || 500;
+  if (req.headers.origin) {
+    res.header('Access-Control-Allow-Origin', req.headers.origin);
+    res.header('Access-Control-Allow-Credentials', 'true');
+  }
+  const statusCode = err.status || (err.message?.includes('File too large') ? 413 : 500);
   res.status(statusCode).json({
     success: false,
     message: err.message || 'An unexpected error occurred on the server.',

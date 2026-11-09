@@ -277,23 +277,30 @@ const uploadJobPoster = async (req, res) => {
 
 // POST /api/v1/school/jobs/extract-from-flyer - AI OCR & Multi-job vacancy extraction from recruitment flyers
 const extractJobsFromFlyer = async (req, res) => {
+  // Guarantee CORS headers on response
+  if (req.headers.origin) {
+    res.setHeader('Access-Control-Allow-Origin', req.headers.origin);
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization,X-Requested-With,Accept,Origin');
+  }
+
   try {
     const userId = req.user.id;
     let buffer = null;
     let mimeType = 'image/jpeg';
-    let flyerUrl = '';
+    let filename = `flyer-${userId}-${Date.now()}.jpg`;
 
     if (req.file) {
       buffer = req.file.buffer || (req.file.path ? fs.readFileSync(req.file.path) : null);
       mimeType = req.file.mimetype || 'image/jpeg';
       const ext = path.extname(req.file.originalname || '') || '.jpg';
-      const filename = `flyer-${userId}-${Date.now()}${ext}`;
-      flyerUrl = await webdavService.uploadFile('jobs', filename, buffer, mimeType);
+      filename = `flyer-${userId}-${Date.now()}${ext}`;
     } else if (req.body?.flyerBase64) {
       const base64Data = req.body.flyerBase64.replace(/^data:image\/\w+;base64,/, '');
       buffer = Buffer.from(base64Data, 'base64');
-      const filename = `flyer-${userId}-${Date.now()}.jpg`;
-      flyerUrl = await webdavService.uploadFile('jobs', filename, buffer, 'image/jpeg');
+      filename = `flyer-${userId}-${Date.now()}.jpg`;
+      mimeType = req.body.mimeType || 'image/jpeg';
     } else {
       return res.status(400).json({
         success: false,
@@ -301,12 +308,21 @@ const extractJobsFromFlyer = async (req, res) => {
       });
     }
 
-    if (!buffer) {
+    if (!buffer || buffer.length === 0) {
       return res.status(400).json({ success: false, message: 'Invalid or empty flyer image file.' });
     }
 
+    // 1. Run AI analysis with automatic multi-model failover
     const geminiService = require('../services/gemini.service');
     const extractionResult = await geminiService.extractJobsFromImage(buffer, mimeType);
+
+    // 2. Best-effort upload to WebDAV (never fail the whole request if storage is momentarily slow)
+    let flyerUrl = `/uploads/jobs/${filename}`;
+    try {
+      flyerUrl = await webdavService.uploadFile('jobs', filename, buffer, mimeType);
+    } catch (uploadErr) {
+      console.warn('[extractJobsFromFlyer] WebDAV upload notice:', uploadErr.message);
+    }
 
     // Attach flyerUrl to all extracted jobs
     const enrichedJobs = (extractionResult.jobs || []).map((j) => ({
@@ -325,6 +341,10 @@ const extractJobsFromFlyer = async (req, res) => {
     });
   } catch (error) {
     console.error('extractJobsFromFlyer Error:', error);
+    if (req.headers.origin) {
+      res.setHeader('Access-Control-Allow-Origin', req.headers.origin);
+      res.setHeader('Access-Control-Allow-Credentials', 'true');
+    }
     return res.status(500).json({
       success: false,
       message: error.message || 'Failed to extract jobs from flyer.'
