@@ -157,9 +157,12 @@ class WebDAVService {
     let localDeleted = false;
     let remoteDeleted = false;
 
+    const rawFilename = decodeURIComponent(filename);
+    const encodedFilename = encodeURIComponent(rawFilename);
+
     // 1. Delete local file
     try {
-      const localFilePath = path.join(this.localUploadDir, subfolder, filename);
+      const localFilePath = path.join(this.localUploadDir, subfolder, rawFilename);
       if (fs.existsSync(localFilePath)) {
         fs.unlinkSync(localFilePath);
         localDeleted = true;
@@ -170,12 +173,15 @@ class WebDAVService {
 
     // 2. Delete remote file on Nextcloud WebDAV
     try {
-      const remoteUrl = `${this.baseUrl}/${subfolder}/${filename}`;
+      const remoteUrl = `${this.baseUrl}/${subfolder}/${encodedFilename}`;
       const res = await fetch(remoteUrl, {
         method: 'DELETE',
         headers: { Authorization: this.authHeader }
       });
       remoteDeleted = res.ok || res.status === 404;
+      if (!res.ok && res.status !== 404) {
+        console.warn(`[WebDAVService] WebDAV DELETE ${remoteUrl} returned status ${res.status}: ${res.statusText}`);
+      }
     } catch (err) {
       console.error('[WebDAVService] WebDAV DELETE error:', err.message);
     }
@@ -183,8 +189,8 @@ class WebDAVService {
     // 3. Clean up database references if any exist so file doesn't reappear in listings
     if (db && typeof db.query === 'function') {
       try {
-        const filePattern = `%${filename}%`;
-        const relativeUrl = `/uploads/${subfolder}/${filename}`;
+        const filePattern = `%${rawFilename}%`;
+        const relativeUrl = `/uploads/${subfolder}/${rawFilename}`;
 
         if (subfolder === 'avatars') {
           await db.query('UPDATE teacher_profiles SET avatar_url = NULL WHERE avatar_url LIKE ? OR avatar_url = ?', [filePattern, relativeUrl]);
@@ -197,7 +203,7 @@ class WebDAVService {
         } else if (subfolder === 'jobs') {
           await db.query('UPDATE jobs SET poster_url = NULL WHERE poster_url LIKE ? OR poster_url = ?', [filePattern, relativeUrl]);
         } else if (subfolder === 'posts') {
-          await db.query('UPDATE community_posts SET image_url = NULL WHERE image_url LIKE ? OR image_url = ?', [filePattern, relativeUrl]);
+          await db.query('UPDATE community_posts SET media_url = NULL WHERE media_url LIKE ? OR media_url = ?', [filePattern, relativeUrl]);
         }
       } catch (dbErr) {
         console.warn('[WebDAVService] Database reference cleanup notice:', dbErr.message);
@@ -213,14 +219,14 @@ class WebDAVService {
    */
   async deleteByUrl(url, fallbackSubfolder = null, fallbackFilename = null) {
     if (url && typeof url === 'string') {
-      const match = url.match(/\/uploads\/([^\/]+)\/([^\/?#]+)/i);
+      const match = url.match(/\/(?:uploads|prohiring)\/([^\/]+)\/([^\/?#]+)/i);
       if (match) {
         const [, subfolder, filename] = match;
-        return await this.deleteFile(subfolder, filename);
+        return await this.deleteFile(subfolder, decodeURIComponent(filename));
       }
     }
     if (fallbackSubfolder && fallbackFilename) {
-      return await this.deleteFile(fallbackSubfolder, fallbackFilename);
+      return await this.deleteFile(fallbackSubfolder, decodeURIComponent(fallbackFilename));
     }
     return false;
   }
