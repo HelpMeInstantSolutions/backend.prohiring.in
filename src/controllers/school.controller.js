@@ -78,7 +78,6 @@ const updateProfile = async (req, res) => {
            board = COALESCE(?, board),
            registration_number = COALESCE(?, registration_number),
            contact_person = COALESCE(?, contact_person),
-           phone = COALESCE(?, phone),
            address = COALESCE(?, address),
            city = COALESCE(?, city),
            state = COALESCE(?, state),
@@ -98,7 +97,7 @@ const updateProfile = async (req, res) => {
            banner_url = COALESCE(?, banner_url)
        WHERE user_id = ?`,
       [
-        schoolName, board, registrationNumber, contactPerson, phone, address, city, state, pincode, website, about,
+        schoolName, board, registrationNumber, contactPerson, address, city, state, pincode, website, about,
         establishedYear ? parseInt(establishedYear, 10) : null,
         institutionType,
         serialize(facilities),

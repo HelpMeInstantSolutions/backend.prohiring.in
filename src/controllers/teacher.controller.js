@@ -217,7 +217,7 @@ const updateProfile = async (req, res) => {
     const isCompleted = !!(fullName && phone && primarySubject && currentCity && qualificationsData);
 
     const updateParams = [
-      fullName, phone, gender, dob, address, pincode, languages, headline,
+      fullName, gender, dob, address, pincode, languages, headline,
       postType, designation,
       highestQualification, specialization, finalExperienceYears, primarySubject, secondarySubjects,
       currentCity, currentState, expectedSalaryMin, expectedSalaryMax, bio,
@@ -232,7 +232,6 @@ const updateProfile = async (req, res) => {
     await query(
       `UPDATE teacher_profiles 
        SET full_name = COALESCE(?, full_name),
-           phone = COALESCE(?, phone),
            gender = COALESCE(?, gender),
            dob = COALESCE(?, dob),
            address = COALESCE(?, address),
