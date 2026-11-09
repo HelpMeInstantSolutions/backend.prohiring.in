@@ -198,6 +198,30 @@ async function runMigration() {
       console.warn('Notice during whatsapp settings initialization:', wsErr.message);
     }
 
+    // Initialize AI & Google Gemini settings if not present
+    try {
+      const aiDefaults = [
+        ['ai_enabled', 'true', 'ai', 1],
+        ['ai_job_extraction_enabled', 'true', 'ai', 1],
+        ['gemini_api_key', process.env.GEMINI_API_KEY || '', 'ai', 0],
+        ['gemini_project_id', process.env.GEMINI_PROJECT_ID || '457270571268', 'ai', 0],
+        ['gemini_model', 'gemini-flash-latest', 'ai', 1]
+      ];
+      for (const [key, val, cat, isPub] of aiDefaults) {
+        await connection.query(
+          `INSERT INTO system_settings (setting_key, setting_value, category, is_public) 
+           VALUES (?, ?, ?, ?) 
+           ON DUPLICATE KEY UPDATE 
+             setting_value = IF(setting_value IS NULL OR setting_value = '', VALUES(setting_value), setting_value),
+             category = VALUES(category), 
+             is_public = VALUES(is_public)`,
+          [key, val, cat, isPub]
+        );
+      }
+    } catch (aiErr) {
+      console.warn('Notice during AI settings initialization:', aiErr.message);
+    }
+
     // Ensure custom_pages table exists and seed default Privacy Policy and Terms of Service
     try {
       await connection.query(`

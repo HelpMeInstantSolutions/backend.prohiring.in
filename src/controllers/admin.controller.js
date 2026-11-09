@@ -1737,6 +1737,60 @@ const resolveStaffDispute = async (req, res) => {
   }
 };
 
+// ============================================================================
+// DATABASE DEEP SEED MANAGEMENT
+// ============================================================================
+
+// GET /api/v1/admin/database/status
+const getDatabaseSeedStatus = async (req, res) => {
+  try {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+    const deepSeed = require('../database/deep_seed');
+    const status = await deepSeed.getDeepSeedStatus();
+    return res.status(200).json(status);
+  } catch (error) {
+    console.error('getDatabaseSeedStatus Error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to retrieve database status: ' + error.message });
+  }
+};
+
+// POST /api/v1/admin/database/seed
+const triggerDeepSeed = async (req, res) => {
+  try {
+    const deepSeed = require('../database/deep_seed');
+    const result = await deepSeed.runDeepSeed();
+    return res.status(result.success ? 200 : 500).json(result);
+  } catch (error) {
+    console.error('triggerDeepSeed Error:', error);
+    return res.status(500).json({ success: false, message: 'Deep Seed execution failed: ' + error.message });
+  }
+};
+
+// POST /api/v1/admin/database/clear
+const triggerClearDeepSeed = async (req, res) => {
+  try {
+    const deepSeed = require('../database/deep_seed');
+    const result = await deepSeed.clearDeepSeed();
+    return res.status(result.success ? 200 : 500).json(result);
+  } catch (error) {
+    console.error('triggerClearDeepSeed Error:', error);
+    return res.status(500).json({ success: false, message: 'Clear Deep Seed execution failed: ' + error.message });
+  }
+};
+
+// POST /api/v1/admin/settings/test-ai - Verify Google Gemini API credentials
+const testAiCredentials = async (req, res) => {
+  try {
+    const geminiService = require('../services/gemini.service');
+    const { apiKey, model, projectId } = req.body || {};
+    const result = await geminiService.verifyCredentials(apiKey, model, projectId);
+    return res.status(result.success ? 200 : 400).json(result);
+  } catch (error) {
+    console.error('testAiCredentials Error:', error);
+    return res.status(500).json({ success: false, message: 'AI test failed: ' + error.message });
+  }
+};
+
 module.exports = {
   getDashboardStats,
   getSchools,
@@ -1782,6 +1836,10 @@ module.exports = {
   deleteCustomPage,
   getStaffDisputes,
   deleteStaffRecord,
-  resolveStaffDispute
+  resolveStaffDispute,
+  getDatabaseSeedStatus,
+  triggerDeepSeed,
+  triggerClearDeepSeed,
+  testAiCredentials
 };
 

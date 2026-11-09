@@ -87,5 +87,12 @@ router.get('/staff-disputes', adminController.getStaffDisputes);
 router.delete('/staff/:id', adminController.deleteStaffRecord);
 router.put('/staff/:id/resolve', adminController.resolveStaffDispute);
 
-module.exports = router;
+// Database Deep Seed & Maintenance
+router.get('/database/status', adminController.getDatabaseSeedStatus);
+router.post('/database/seed', adminController.triggerDeepSeed);
+router.post('/database/clear', adminController.triggerClearDeepSeed);
 
+// AI Settings & Credentials Test
+router.post('/settings/test-ai', adminController.testAiCredentials);
+
+module.exports = router;

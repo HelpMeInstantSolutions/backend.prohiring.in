@@ -353,3 +353,11 @@ CREATE TABLE IF NOT EXISTS `school_inquiries` (
   INDEX `idx_inquiries_school` (`school_id`, `created_at` DESC),
   FOREIGN KEY (`school_id`) REFERENCES `school_profiles` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 21. AI & Vision Settings
+INSERT IGNORE INTO `system_settings` (`setting_key`, `setting_value`, `category`, `is_public`) VALUES
+('ai_enabled', 'true', 'ai', 1),
+('ai_job_extraction_enabled', 'true', 'ai', 1),
+('gemini_api_key', '', 'ai', 0),
+('gemini_project_id', '457270571268', 'ai', 0),
+('gemini_model', 'gemini-flash-latest', 'ai', 1);

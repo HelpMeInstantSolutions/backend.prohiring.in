@@ -273,6 +273,65 @@ const uploadJobPoster = async (req, res) => {
 
 // POST /api/v1/school/jobs
 // POST /api/v1/school/jobs (Supports both single vacancy and batch multi-vacancy posting)
+
+
+// POST /api/v1/school/jobs/extract-from-flyer - AI OCR & Multi-job vacancy extraction from recruitment flyers
+const extractJobsFromFlyer = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    let buffer = null;
+    let mimeType = 'image/jpeg';
+    let flyerUrl = '';
+
+    if (req.file) {
+      buffer = req.file.buffer || (req.file.path ? fs.readFileSync(req.file.path) : null);
+      mimeType = req.file.mimetype || 'image/jpeg';
+      const ext = path.extname(req.file.originalname || '') || '.jpg';
+      const filename = `flyer-${userId}-${Date.now()}${ext}`;
+      flyerUrl = await webdavService.uploadFile('jobs', filename, buffer, mimeType);
+    } else if (req.body?.flyerBase64) {
+      const base64Data = req.body.flyerBase64.replace(/^data:image\/\w+;base64,/, '');
+      buffer = Buffer.from(base64Data, 'base64');
+      const filename = `flyer-${userId}-${Date.now()}.jpg`;
+      flyerUrl = await webdavService.uploadFile('jobs', filename, buffer, 'image/jpeg');
+    } else {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide a recruitment flyer image or base64 data.'
+      });
+    }
+
+    if (!buffer) {
+      return res.status(400).json({ success: false, message: 'Invalid or empty flyer image file.' });
+    }
+
+    const geminiService = require('../services/gemini.service');
+    const extractionResult = await geminiService.extractJobsFromImage(buffer, mimeType);
+
+    // Attach flyerUrl to all extracted jobs
+    const enrichedJobs = (extractionResult.jobs || []).map((j) => ({
+      ...j,
+      poster_url: flyerUrl,
+      posterUrl: flyerUrl
+    }));
+
+    return res.status(200).json({
+      success: true,
+      message: `Successfully extracted ${enrichedJobs.length} vacancies from flyer.`,
+      flyerUrl,
+      flyerMetadata: extractionResult.flyerMetadata,
+      jobsCount: enrichedJobs.length,
+      jobs: enrichedJobs
+    });
+  } catch (error) {
+    console.error('extractJobsFromFlyer Error:', error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to extract jobs from flyer.'
+    });
+  }
+};
+
 const postJob = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -1577,6 +1636,7 @@ module.exports = {
   uploadBanner,
   postJob,
   uploadJobPoster,
+  extractJobsFromFlyer,
   getMyJobs,
   updateJob,
   getJobApplicants,
