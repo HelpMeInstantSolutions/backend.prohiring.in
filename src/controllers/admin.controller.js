@@ -386,7 +386,7 @@ const getJobSettings = async (req, res) => {
 // PUT /api/v1/admin/jobs/settings - Update vacancy auto-expiration duration
 const updateJobSettings = async (req, res) => {
   try {
-    const { autoExpireDays } = req.body;
+    const autoExpireDays = req.body?.autoExpireDays || req.query?.autoExpireDays;
     const days = parseInt(autoExpireDays, 10);
     if (isNaN(days) || days < 1) {
       return res.status(400).json({
@@ -425,7 +425,7 @@ const updateJobSettings = async (req, res) => {
 const updateJobStatus = async (req, res) => {
   try {
     const jobId = req.params.id;
-    const { status } = req.body;
+    const status = req.body?.status || req.query?.status;
 
     const validStatuses = ['active', 'closed', 'draft'];
     if (!status || !validStatuses.includes(status)) {
