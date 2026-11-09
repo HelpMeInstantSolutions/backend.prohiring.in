@@ -410,8 +410,8 @@ const postJob = async (req, res) => {
       const finalStatus = (status === 'draft' || status === 'closed') ? status : 'active';
       const finalQual = qualificationRequired || qualification || 'Relevant Degree / B.Ed';
       const finalExp = experienceRequired || experience_required || '1-3 Years';
-      const finalSalMin = salaryMin !== undefined ? salaryMin : (salary_min !== undefined ? salary_min : 0);
-      const finalSalMax = salaryMax !== undefined ? salaryMax : (salary_max !== undefined ? salary_max : 0);
+      const finalSalMin = salaryMin !== undefined && salaryMin !== '' ? (parseInt(salaryMin, 10) || 0) : (salary_min !== undefined && salary_min !== '' ? (parseInt(salary_min, 10) || 0) : 0);
+      const finalSalMax = salaryMax !== undefined && salaryMax !== '' ? (parseInt(salaryMax, 10) || 0) : (salary_max !== undefined && salary_max !== '' ? (parseInt(salary_max, 10) || 0) : 0);
       const finalSalNeg = salaryNegotiable !== undefined ? (salaryNegotiable ? 1 : 0) : (salary_negotiable !== undefined ? (salary_negotiable ? 1 : 0) : 0);
       const finalJobType = jobType || job_type || 'full_time';
       const finalInterviewTime = (interviewTime || interview_time || '').trim() || null;
