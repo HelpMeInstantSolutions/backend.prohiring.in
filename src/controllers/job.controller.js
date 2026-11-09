@@ -114,7 +114,7 @@ const getPublicJobs = async (req, res) => {
     // Data query
     const dataSql = `
       SELECT 
-        j.id, j.share_code, j.title, j.designation, j.subject, j.qualification_required, 
+        j.id, j.share_code, j.title, j.post_type, j.designation, j.subject, j.qualification_required, 
         j.experience_required, j.salary_min, j.salary_max, j.salary_negotiable, 
         j.job_type, j.openings, j.city, j.state, j.deadline, j.created_at, j.poster_url,
         j.interview_time, j.venue,
@@ -161,7 +161,7 @@ const getFeaturedJobs = async (req, res) => {
   try {
     const sql = `
       SELECT 
-        j.id, j.share_code, j.title, j.designation, j.subject, j.qualification_required, 
+        j.id, j.share_code, j.title, j.post_type, j.designation, j.subject, j.qualification_required, 
         j.experience_required, j.salary_min, j.salary_max, j.salary_negotiable, 
         j.job_type, j.city, j.state, j.created_at, j.poster_url, j.interview_time, j.venue,
         s.school_name, s.logo_url as school_logo, s.board, s.slug as school_slug,
