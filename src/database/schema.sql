@@ -360,4 +360,4 @@ INSERT IGNORE INTO `system_settings` (`setting_key`, `setting_value`, `category`
 ('ai_job_extraction_enabled', 'true', 'ai', 1),
 ('gemini_api_key', '', 'ai', 0),
 ('gemini_project_id', '457270571268', 'ai', 0),
-('gemini_model', 'gemini-flash-latest', 'ai', 1);
+('gemini_model', 'gemini-3.5-flash', 'ai', 1);

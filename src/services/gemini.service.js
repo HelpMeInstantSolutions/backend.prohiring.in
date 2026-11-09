@@ -7,7 +7,7 @@ class GeminiService {
   constructor() {
     this.defaultApiKey = process.env.GEMINI_API_KEY || '';
     this.defaultProjectId = process.env.GEMINI_PROJECT_ID || '457270571268';
-    this.defaultModel = process.env.GEMINI_MODEL || 'gemini-flash-latest';
+    this.defaultModel = process.env.GEMINI_MODEL || 'gemini-3.5-flash';
   }
 
   /**
@@ -15,6 +15,9 @@ class GeminiService {
    */
   async getConfig() {
     try {
+      if (!db || typeof db.query !== 'function') {
+        throw new Error('Database connection not available');
+      }
       const rows = await db.query(
         `SELECT setting_key, setting_value FROM system_settings 
          WHERE setting_key IN ('ai_enabled', 'ai_job_extraction_enabled', 'gemini_api_key', 'gemini_project_id', 'gemini_model')`
@@ -45,6 +48,79 @@ class GeminiService {
   }
 
   /**
+   * Calls Google Gemini generateContent with automatic multi-model failover.
+   * Handles 503 (high demand spikes) and 429 (rate limits) seamlessly by falling back
+   * to alternative active models.
+   */
+  async callGeminiWithFailover(apiKey, configuredModel, bodyPayload) {
+    const candidateModels = Array.from(new Set([
+      configuredModel,
+      'gemini-3.5-flash',
+      'gemini-flash-lite-latest',
+      'gemini-3.8-flash',
+      'gemini-flash-latest'
+    ].filter(Boolean)));
+
+    let lastError = null;
+
+    for (let i = 0; i < candidateModels.length; i++) {
+      const currentModel = candidateModels[i];
+      try {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${currentModel}:generateContent?key=${apiKey}`;
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(bodyPayload)
+        });
+
+        const data = await res.json();
+
+        // If high demand (503) or rate limit (429), attempt next model
+        if (!res.ok) {
+          const errMsg = data.error?.message || `HTTP ${res.status}`;
+          const isHighDemandOrQuota = res.status === 503 || res.status === 429 || 
+            errMsg.toLowerCase().includes('high demand') || 
+            errMsg.toLowerCase().includes('quota') ||
+            errMsg.toLowerCase().includes('capacity') ||
+            errMsg.toLowerCase().includes('unavailable');
+
+          if (isHighDemandOrQuota && i < candidateModels.length - 1) {
+            console.warn(`[GeminiService] Model "${currentModel}" is experiencing high demand (${errMsg}). Auto-switching to fallback model "${candidateModels[i + 1]}"...`);
+            lastError = new Error(`Model "${currentModel}" busy: ${errMsg}`);
+            continue;
+          }
+
+          throw new Error(errMsg);
+        }
+
+        const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (!rawText) {
+          throw new Error(`Model "${currentModel}" returned empty content.`);
+        }
+
+        return {
+          modelUsed: currentModel,
+          rawText,
+          data
+        };
+      } catch (err) {
+        lastError = err;
+        const msg = err.message || '';
+        const isHighDemand = msg.includes('503') || msg.toLowerCase().includes('high demand') || msg.toLowerCase().includes('fetch failed');
+        if (isHighDemand && i < candidateModels.length - 1) {
+          console.warn(`[GeminiService] Model "${currentModel}" notice (${msg}), falling back to "${candidateModels[i + 1]}"...`);
+          continue;
+        }
+        if (i === candidateModels.length - 1) {
+          throw err;
+        }
+      }
+    }
+
+    throw lastError || new Error('All Gemini candidate models failed.');
+  }
+
+  /**
    * Test and verify Google Gemini credentials
    */
   async verifyCredentials(customApiKey = null, customModel = null, customProjectId = null) {
@@ -57,27 +133,18 @@ class GeminiService {
     }
 
     try {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: 'Respond with valid JSON: {"status":"verified","service":"gemini_vision"}' }] }],
-          generationConfig: { responseMimeType: 'application/json' }
-        })
+      const result = await this.callGeminiWithFailover(apiKey, model, {
+        contents: [{ parts: [{ text: 'Respond with valid JSON: {"status":"verified","service":"gemini_vision"}' }] }],
+        generationConfig: { responseMimeType: 'application/json' }
       });
 
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error?.message || `API returned status ${res.status}`);
-      }
+      const modelNote = result.modelUsed === model ? `Model "${model}" is active.` : `Active (auto-routed to high-availability model "${result.modelUsed}").`;
 
-      const responseText = data.candidates?.[0]?.content?.parts?.[0]?.text;
       return {
         success: true,
-        message: `Google Gemini Vision connected successfully! Model "${model}" is active.`,
-        model,
-        sampleOutput: responseText
+        message: `Google Gemini Vision connected successfully! ${modelNote}`,
+        model: result.modelUsed,
+        sampleOutput: result.rawText
       };
     } catch (err) {
       console.error('[GeminiService] verifyCredentials error:', err.message);
@@ -169,41 +236,27 @@ Return ONLY a valid JSON object matching this structure:
 }
 `;
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${config.model}:generateContent?key=${config.apiKey}`;
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [
-          {
-            parts: [
-              { text: promptText },
-              {
-                inlineData: {
-                  mimeType,
-                  data: base64Data
-                }
+    const failoverResult = await this.callGeminiWithFailover(config.apiKey, config.model, {
+      contents: [
+        {
+          parts: [
+            { text: promptText },
+            {
+              inlineData: {
+                mimeType,
+                data: base64Data
               }
-            ]
-          }
-        ],
-        generationConfig: {
-          responseMimeType: 'application/json',
-          temperature: 0.1
+            }
+          ]
         }
-      })
+      ],
+      generationConfig: {
+        responseMimeType: 'application/json',
+        temperature: 0.1
+      }
     });
 
-    const data = await res.json();
-    if (!res.ok) {
-      throw new Error(data.error?.message || `Gemini Vision failed with status ${res.status}`);
-    }
-
-    const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!rawText) {
-      throw new Error('Gemini Vision did not return content.');
-    }
-
+    const rawText = failoverResult.rawText;
     let parsedResult;
     try {
       parsedResult = JSON.parse(rawText);
@@ -219,6 +272,7 @@ Return ONLY a valid JSON object matching this structure:
 
     return {
       success: true,
+      modelUsed: failoverResult.modelUsed,
       flyerMetadata: parsedResult.flyer_metadata || {},
       jobsCount: jobs.length,
       jobs

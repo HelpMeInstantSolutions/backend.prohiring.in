@@ -205,7 +205,7 @@ async function runMigration() {
         ['ai_job_extraction_enabled', 'true', 'ai', 1],
         ['gemini_api_key', process.env.GEMINI_API_KEY || '', 'ai', 0],
         ['gemini_project_id', process.env.GEMINI_PROJECT_ID || '457270571268', 'ai', 0],
-        ['gemini_model', 'gemini-flash-latest', 'ai', 1]
+        ['gemini_model', 'gemini-3.5-flash', 'ai', 1]
       ];
       for (const [key, val, cat, isPub] of aiDefaults) {
         await connection.query(
