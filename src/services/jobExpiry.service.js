@@ -1,3 +1,4 @@
+const { notifyJobRemoved } = require('./googleIndexing.service');
 const { query } = require('../config/database');
 
 /**
@@ -10,6 +11,17 @@ async function expireOldJobs() {
     );
     const days = parseInt(setting?.[0]?.setting_value, 10) || 15;
     if (days > 0) {
+      // Fetch expiring share_codes first to notify Google
+      try {
+        const expiring = await query(
+          "SELECT share_code FROM jobs WHERE status = 'active' AND created_at < DATE_SUB(NOW(), INTERVAL ? DAY)",
+          [days]
+        );
+        for (const j of expiring) {
+          if (j.share_code) notifyJobRemoved(j.share_code).catch(() => {});
+        }
+      } catch (_) {}
+
       const result = await query(
         "UPDATE jobs SET status = 'closed' WHERE status = 'active' AND created_at < DATE_SUB(NOW(), INTERVAL ? DAY)",
         [days]

@@ -95,4 +95,8 @@ router.post('/database/clear', adminController.triggerClearDeepSeed);
 // AI Settings & Credentials Test
 router.post('/settings/test-ai', adminController.testAiCredentials);
 
+// Google Indexing API actions
+router.post('/indexing/sync-all', adminController.syncAllJobsToGoogleIndexing);
+router.post('/indexing/test', adminController.testGoogleIndexing);
+
 module.exports = router;

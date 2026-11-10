@@ -6,3 +6,6 @@ yarn-debug.log*
 yarn-error.log*
 .DS_Store
 *.log
+*google-indexing-key*.json
+*service-account*.json
+config/google-indexing-key.json

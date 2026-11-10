@@ -1,3 +1,4 @@
+const { notifyJobPublished, notifyJobRemoved } = require('../services/googleIndexing.service');
 const fs = require('fs');
 const path = require('path');
 const { query } = require('../config/database');
@@ -530,6 +531,19 @@ const postJob = async (req, res) => {
       });
     }
 
+    // Automatically push newly published job URLs to Google Indexing API
+    if (shareCodes.length > 0) {
+      (async () => {
+        for (const code of shareCodes) {
+          try {
+            await notifyJobPublished(code);
+          } catch (e) {
+            console.warn('[Google Indexing PostJob Notice]:', e.message);
+          }
+        }
+      })().catch(err => console.warn('[Google Indexing Background Task]:', err.message));
+    }
+
     return res.status(201).json({
       success: true,
       message: `${createdIds.length} ${createdIds.length > 1 ? 'vacancies' : 'vacancy'} published successfully!`,
@@ -757,6 +771,23 @@ const updateJob = async (req, res) => {
         ]
       );
     }
+
+    // Automatically notify Google Indexing API if status changed
+    (async () => {
+      try {
+        const jRows = await query('SELECT share_code, status FROM jobs WHERE id = ?', [jobId]);
+        if (jRows.length > 0 && jRows[0].share_code) {
+          const curStatus = jRows[0].status;
+          if (curStatus === 'active') {
+            await notifyJobPublished(jRows[0].share_code);
+          } else if (curStatus === 'closed') {
+            await notifyJobRemoved(jRows[0].share_code);
+          }
+        }
+      } catch (e) {
+        console.warn('[Google Indexing UpdateJob Notice]:', e.message);
+      }
+    })().catch(() => {});
 
     return res.status(200).json({
       success: true,
