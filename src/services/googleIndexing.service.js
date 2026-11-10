@@ -17,12 +17,21 @@ function base64UrlEncode(str) {
  * Loads service account credentials from file or environment variables
  */
 function getCredentials() {
-  const keyPath = path.join(__dirname, '../../config/google-indexing-key.json');
-  if (fs.existsSync(keyPath)) {
-    try {
-      return JSON.parse(fs.readFileSync(keyPath, 'utf8'));
-    } catch (e) {
-      console.warn('[Google Indexing] Error parsing key file:', e.message);
+  const possiblePaths = [
+    path.join(__dirname, '../config/google-indexing-key.json'),     // /src/config/
+    path.join(__dirname, '../../config/google-indexing-key.json'),   // /config/
+    path.join(process.cwd(), 'src/config/google-indexing-key.json'),
+    path.join(process.cwd(), 'config/google-indexing-key.json')
+  ];
+
+  for (const p of possiblePaths) {
+    if (fs.existsSync(p)) {
+      try {
+        const raw = fs.readFileSync(p, 'utf8');
+        return JSON.parse(raw);
+      } catch (e) {
+        console.warn(`[Google Indexing] Error parsing key file at ${p}:`, e.message);
+      }
     }
   }
 
