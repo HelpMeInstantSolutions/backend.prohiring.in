@@ -18,10 +18,14 @@ function base64UrlEncode(str) {
  */
 function getCredentials() {
   const possiblePaths = [
-    path.join(__dirname, '../config/google-indexing-key.json'),     // /src/config/
-    path.join(__dirname, '../../config/google-indexing-key.json'),   // /config/
+    path.join(__dirname, '../config/google-indexing-key.json'),
+    path.join(__dirname, '../config/google-indexing-key.json.json'),
+    path.join(__dirname, '../../config/google-indexing-key.json'),
+    path.join(__dirname, '../../config/google-indexing-key.json.json'),
     path.join(process.cwd(), 'src/config/google-indexing-key.json'),
-    path.join(process.cwd(), 'config/google-indexing-key.json')
+    path.join(process.cwd(), 'src/config/google-indexing-key.json.json'),
+    path.join(process.cwd(), 'config/google-indexing-key.json'),
+    path.join(process.cwd(), 'config/google-indexing-key.json.json')
   ];
 
   for (const p of possiblePaths) {
