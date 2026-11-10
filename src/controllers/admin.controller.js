@@ -1815,6 +1815,53 @@ const testAiCredentials = async (req, res) => {
   }
 };
 
+// POST /api/v1/admin/indexing/sync-all - Push all active vacancies to Google Indexing API
+const syncAllJobsToGoogleIndexing = async (req, res) => {
+  try {
+    const activeJobs = await query(
+      "SELECT id, share_code, title, city FROM jobs WHERE status = 'active'"
+    );
+
+    const results = [];
+    for (const job of activeJobs) {
+      if (job.share_code) {
+        const r = await notifyJobPublished(job.share_code);
+        results.push({ id: job.id, code: job.share_code, title: job.title, result: r });
+      }
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: `Pushed ${results.length} active jobs to Google Indexing API.`,
+      total: results.length,
+      details: results
+    });
+  } catch (error) {
+    console.error('syncAllJobsToGoogleIndexing Error:', error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to sync with Google Indexing API.'
+    });
+  }
+};
+
+// POST /api/v1/admin/indexing/test - Test Google Indexing API connection
+const testGoogleIndexing = async (req, res) => {
+  try {
+    const testUrl = req.body?.url || 'https://prohiring.in/jobs';
+    const result = await publishUrl(testUrl, 'URL_UPDATED');
+    return res.status(200).json({
+      success: result.success,
+      data: result
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
 module.exports = {
   syncAllJobsToGoogleIndexing,
   testGoogleIndexing,
@@ -1867,52 +1914,4 @@ module.exports = {
   triggerDeepSeed,
   triggerClearDeepSeed,
   testAiCredentials
-};
-
-
-// POST /api/v1/admin/indexing/sync-all - Push all active vacancies to Google Indexing API
-const syncAllJobsToGoogleIndexing = async (req, res) => {
-  try {
-    const activeJobs = await query(
-      "SELECT id, share_code, title, city FROM jobs WHERE status = 'active'"
-    );
-
-    const results = [];
-    for (const job of activeJobs) {
-      if (job.share_code) {
-        const r = await notifyJobPublished(job.share_code);
-        results.push({ id: job.id, code: job.share_code, title: job.title, result: r });
-      }
-    }
-
-    return res.status(200).json({
-      success: true,
-      message: `Pushed ${results.length} active jobs to Google Indexing API.`,
-      total: results.length,
-      details: results
-    });
-  } catch (error) {
-    console.error('syncAllJobsToGoogleIndexing Error:', error);
-    return res.status(500).json({
-      success: false,
-      message: error.message || 'Failed to sync with Google Indexing API.'
-    });
-  }
-};
-
-// POST /api/v1/admin/indexing/test - Test Google Indexing API connection
-const testGoogleIndexing = async (req, res) => {
-  try {
-    const testUrl = req.body?.url || 'https://prohiring.in/jobs';
-    const result = await publishUrl(testUrl, 'URL_UPDATED');
-    return res.status(200).json({
-      success: result.success,
-      data: result
-    });
-  } catch (error) {
-    return res.status(500).json({
-      success: false,
-      message: error.message
-    });
-  }
 };
