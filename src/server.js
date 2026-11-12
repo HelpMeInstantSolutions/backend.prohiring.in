@@ -68,6 +68,13 @@ app.options('*', cors(corsOptions));
 app.use(helmet({
   crossOriginResourcePolicy: { policy: "cross-origin" }
 }));
+
+// Strictly prevent search engines & bots from indexing backend API
+app.use((req, res, next) => {
+  res.setHeader('X-Robots-Tag', 'noindex, nofollow, noarchive');
+  next();
+});
+
 app.use(morgan('dev'));
 
 app.use(express.json({ limit: '10mb' }));
