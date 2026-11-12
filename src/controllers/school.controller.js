@@ -355,7 +355,7 @@ const extractJobsFromFlyer = async (req, res) => {
 const postJob = async (req, res) => {
   try {
     const userId = req.user.id;
-    const schoolRows = await query('SELECT id, school_name, is_verified, city, state, address FROM school_profiles WHERE user_id = ?', [userId]);
+    const schoolRows = await query('SELECT id, school_name, slug, is_verified, city, state, address FROM school_profiles WHERE user_id = ?', [userId]);
     if (schoolRows.length === 0) return res.status(404).json({ success: false, message: 'School profile not found.' });
 
     const school = schoolRows[0];
@@ -368,6 +368,9 @@ const postJob = async (req, res) => {
 
     const createdIds = [];
     const shareCodes = [];
+    const jobSlugs = [];
+
+    const toSlug = (str) => String(str || '').toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 
     for (const item of incomingJobs) {
       const {
@@ -423,12 +426,33 @@ const postJob = async (req, res) => {
 
       const shareCode = crypto.randomBytes(8).toString('hex'); // 16-character unique alphanumeric slug
 
+      // Auto-generate SEO Slug: {school-slug}-{designation-slug}-{city-slug}
+      const sSlug = school.slug || toSlug(school.school_name) || 'school';
+      const dSlug = toSlug(designation) || 'teacher';
+      const cSlug = toSlug(jobCity) || 'india';
+      const subSlug = toSlug(subject);
+
+      let candidateSlug = `${sSlug}-${dSlug}-${cSlug}`;
+      try {
+        const [dup] = await query('SELECT id FROM jobs WHERE slug = ? LIMIT 1', [candidateSlug]);
+        if (dup) {
+          if (subSlug && !candidateSlug.includes(subSlug)) {
+            candidateSlug = `${sSlug}-${dSlug}-${subSlug}-${cSlug}`;
+          }
+          const [dup2] = await query('SELECT id FROM jobs WHERE slug = ? LIMIT 1', [candidateSlug]);
+          if (dup2) {
+            candidateSlug = `${candidateSlug}-${shareCode.slice(0, 4)}`;
+          }
+        }
+      } catch (_) {}
+      const finalJobSlug = candidateSlug;
+
       let result;
       try {
         result = await query(
           `INSERT INTO jobs 
-           (school_id, title, designation, subject, qualification_required, experience_required, salary_min, salary_max, salary_negotiable, job_type, openings, description, responsibilities, benefits, city, state, deadline, status, share_code, poster_url, post_type, interview_time, venue)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           (school_id, title, designation, subject, qualification_required, experience_required, salary_min, salary_max, salary_negotiable, job_type, openings, description, responsibilities, benefits, city, state, deadline, status, share_code, poster_url, post_type, interview_time, venue, slug)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             school.id,
             title.trim(),
@@ -452,18 +476,20 @@ const postJob = async (req, res) => {
             finalPosterUrl,
             finalPostType,
             finalInterviewTime,
-            finalVenue
+            finalVenue,
+            finalJobSlug
           ]
         );
         createdIds.push(result.insertId);
         shareCodes.push(shareCode);
+        jobSlugs.push(finalJobSlug);
       } catch (insertErr) {
         // Fallback without interview_time/venue if not yet migrated
         try {
           result = await query(
             `INSERT INTO jobs 
-             (school_id, title, designation, subject, qualification_required, experience_required, salary_min, salary_max, salary_negotiable, job_type, openings, description, responsibilities, benefits, city, state, deadline, status, share_code, poster_url, post_type)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             (school_id, title, designation, subject, qualification_required, experience_required, salary_min, salary_max, salary_negotiable, job_type, openings, description, responsibilities, benefits, city, state, deadline, status, share_code, poster_url, post_type, slug)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
               school.id,
               title.trim(),
@@ -485,7 +511,8 @@ const postJob = async (req, res) => {
               finalStatus,
               shareCode,
               finalPosterUrl,
-              finalPostType
+              finalPostType,
+              finalJobSlug
             ]
           );
           createdIds.push(result.insertId);
@@ -534,9 +561,9 @@ const postJob = async (req, res) => {
     // Automatically push newly published job URLs to Google Indexing API
     if (shareCodes.length > 0) {
       (async () => {
-        for (const code of shareCodes) {
+        for (let i = 0; i < shareCodes.length; i++) {
           try {
-            await notifyJobPublished(code);
+            await notifyJobPublished(jobSlugs[i] || shareCodes[i]);
           } catch (e) {
             console.warn('[Google Indexing PostJob Notice]:', e.message);
           }
@@ -552,7 +579,9 @@ const postJob = async (req, res) => {
         jobIds: createdIds,
         jobId: createdIds[0],
         shareCodes,
-        shareCode: shareCodes[0]
+        shareCode: shareCodes[0],
+        slugs: jobSlugs,
+        slug: jobSlugs[0]
       }
     });
   } catch (error) {

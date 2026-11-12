@@ -169,6 +169,43 @@ async function runMigration() {
       console.warn('Notice during jobs 16-char slug migration:', jSlugErr.message);
     }
 
+    // Auto-generate and backfill SEO slugs for jobs: {school-slug}-{designation-slug}-{city-slug}
+    try {
+      const toSlug = (str) => String(str || '').toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+      const [jobsWithoutSlug] = await connection.query(
+        `SELECT j.id, j.title, j.designation, j.subject, j.city, j.share_code, s.school_name, s.slug as school_slug
+         FROM jobs j
+         JOIN school_profiles s ON j.school_id = s.id
+         WHERE j.slug IS NULL OR j.slug = ''`
+      );
+      if (jobsWithoutSlug && jobsWithoutSlug.length > 0) {
+        console.log(`Generating SEO slugs for ${jobsWithoutSlug.length} jobs...`);
+        for (const j of jobsWithoutSlug) {
+          const sSlug = j.school_slug || toSlug(j.school_name) || 'school';
+          const dSlug = toSlug(j.designation) || 'teacher';
+          const cSlug = toSlug(j.city) || 'india';
+          const subSlug = toSlug(j.subject);
+
+          let candidate = `${sSlug}-${dSlug}-${cSlug}`;
+          const [dup] = await connection.query("SELECT id FROM jobs WHERE slug = ? AND id != ?", [candidate, j.id]);
+          if (dup && dup.length > 0) {
+            if (subSlug && !candidate.includes(subSlug)) {
+              candidate = `${sSlug}-${dSlug}-${subSlug}-${cSlug}`;
+            }
+            const [dup2] = await connection.query("SELECT id FROM jobs WHERE slug = ? AND id != ?", [candidate, j.id]);
+            if (dup2 && dup2.length > 0) {
+              const suffix = (j.share_code || '').slice(0, 4) || String(j.id);
+              candidate = `${candidate}-${suffix}`;
+            }
+          }
+          await connection.query("UPDATE jobs SET slug = ? WHERE id = ?", [candidate, j.id]);
+          console.log(`Generated SEO slug '${candidate}' for job ID ${j.id}`);
+        }
+      }
+    } catch (seoSlugErr) {
+      console.warn('Notice during jobs SEO slug backfill:', seoSlugErr.message);
+    }
+
     // Ensure WhatsApp platform settings exist
     try {
       const whatsappDefaults = [
