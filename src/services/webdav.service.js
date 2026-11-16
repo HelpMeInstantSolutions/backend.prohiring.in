@@ -54,13 +54,24 @@ class WebDAVService {
    * @returns {Promise<string>} Relative URL path e.g. '/uploads/avatars/avatar-123.jpg'
    */
   async uploadFile(subfolder, filename, buffer, mimeType = 'application/octet-stream') {
+    const folderPath = path.join(this.localUploadDir, subfolder);
+    const localFilePath = path.join(folderPath, filename);
+
+    // Fast-path: If the file already exists locally with matching size, reuse without redundant remote upload
+    if (fs.existsSync(localFilePath)) {
+      try {
+        const stats = fs.statSync(localFilePath);
+        if (stats.size === buffer.length) {
+          return `/uploads/${subfolder}/${filename}`;
+        }
+      } catch (_) {}
+    }
+
     // 1. Save to local disk cache (best effort - never fail request if disk permissions restricted)
     try {
-      const folderPath = path.join(this.localUploadDir, subfolder);
       if (!fs.existsSync(folderPath)) {
         fs.mkdirSync(folderPath, { recursive: true });
       }
-      const localFilePath = path.join(folderPath, filename);
       fs.writeFileSync(localFilePath, buffer);
     } catch (cacheErr) {
       console.warn(`[WebDAVService] Local cache notice (write skipped): ${cacheErr.message}`);

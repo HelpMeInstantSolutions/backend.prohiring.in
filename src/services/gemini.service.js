@@ -333,9 +333,10 @@ class GeminiService {
   async callGeminiWithFailover(apiKey, configuredModel, bodyPayload) {
     const candidateModels = Array.from(new Set([
       configuredModel,
-      'gemini-3.5-flash',
-      'gemini-flash-lite-latest',
-      'gemini-3.8-flash',
+      'gemini-2.5-flash',
+      'gemini-2.0-flash',
+      'gemini-1.5-flash',
+      'gemini-1.5-flash-8b',
       'gemini-flash-latest'
     ].filter(Boolean)));
 
@@ -353,26 +354,22 @@ class GeminiService {
 
         const data = await res.json();
 
-        // If high demand (503) or rate limit (429), attempt next model
         if (!res.ok) {
           const errMsg = data.error?.message || `HTTP ${res.status}`;
-          const isHighDemandOrQuota = res.status === 503 || res.status === 429 || 
-            errMsg.toLowerCase().includes('high demand') || 
-            errMsg.toLowerCase().includes('quota') ||
-            errMsg.toLowerCase().includes('capacity') ||
-            errMsg.toLowerCase().includes('unavailable');
-
-          if (isHighDemandOrQuota && i < candidateModels.length - 1) {
-            console.warn(`[GeminiService] Model "${currentModel}" is experiencing high demand (${errMsg}). Auto-switching to fallback model "${candidateModels[i + 1]}"...`);
-            lastError = new Error(`Model "${currentModel}" busy: ${errMsg}`);
+          console.warn(`[GeminiService] Model "${currentModel}" failed (${errMsg}). Trying next candidate model...`);
+          lastError = new Error(`Model "${currentModel}" failed: ${errMsg}`);
+          if (i < candidateModels.length - 1) {
             continue;
           }
-
-          throw new Error(errMsg);
+          throw lastError;
         }
 
         const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text;
         if (!rawText) {
+          console.warn(`[GeminiService] Model "${currentModel}" returned empty content. Trying next candidate model...`);
+          if (i < candidateModels.length - 1) {
+            continue;
+          }
           throw new Error(`Model "${currentModel}" returned empty content.`);
         }
 
@@ -383,15 +380,11 @@ class GeminiService {
         };
       } catch (err) {
         lastError = err;
-        const msg = err.message || '';
-        const isHighDemand = msg.includes('503') || msg.toLowerCase().includes('high demand') || msg.toLowerCase().includes('fetch failed');
-        if (isHighDemand && i < candidateModels.length - 1) {
-          console.warn(`[GeminiService] Model "${currentModel}" notice (${msg}), falling back to "${candidateModels[i + 1]}"...`);
+        console.warn(`[GeminiService] Model "${currentModel}" request error: ${err.message}. Trying next model...`);
+        if (i < candidateModels.length - 1) {
           continue;
         }
-        if (i === candidateModels.length - 1) {
-          throw err;
-        }
+        throw err;
       }
     }
 

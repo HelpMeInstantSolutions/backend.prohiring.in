@@ -236,26 +236,35 @@ const uploadJobPoster = async (req, res) => {
   try {
     const userId = req.user.id;
     let posterUrl = '';
+    const crypto = require('crypto');
+
+    let buffer = null;
+    let mimeType = 'image/jpeg';
+    let ext = '.jpg';
 
     if (req.file) {
-      const buffer = req.file.buffer || (req.file.path ? fs.readFileSync(req.file.path) : null);
-      if (!buffer) {
-        return res.status(400).json({ success: false, message: 'Invalid or empty poster file provided.' });
-      }
-      const ext = path.extname(req.file.originalname || '') || '.jpg';
-      const filename = req.file.filename || `poster-${userId}-${Date.now()}${ext}`;
-      posterUrl = await webdavService.uploadFile('jobs', filename, buffer, req.file.mimetype || 'image/jpeg');
+      buffer = req.file.buffer || (req.file.path ? fs.readFileSync(req.file.path) : null);
+      mimeType = req.file.mimetype || 'image/jpeg';
+      ext = path.extname(req.file.originalname || '') || '.jpg';
     } else if (req.body?.posterBase64) {
       const base64Data = req.body.posterBase64.replace(/^data:image\/\w+;base64,/, '');
-      const buffer = Buffer.from(base64Data, 'base64');
-      const filename = `poster-${userId}-${Date.now()}.jpg`;
-      posterUrl = await webdavService.uploadFile('jobs', filename, buffer, 'image/jpeg');
+      buffer = Buffer.from(base64Data, 'base64');
+      mimeType = req.body.mimeType || 'image/jpeg';
     } else {
       return res.status(400).json({
         success: false,
         message: 'No poster file or base64 image data provided.'
       });
     }
+
+    if (!buffer || buffer.length === 0) {
+      return res.status(400).json({ success: false, message: 'Invalid or empty poster file provided.' });
+    }
+
+    // Deduplicate filename by content MD5 hash so same flyer is never re-uploaded multiple times
+    const hash = crypto.createHash('md5').update(buffer).digest('hex').slice(0, 16);
+    const filename = `job-flyer-${userId}-${hash}${ext}`;
+    posterUrl = await webdavService.uploadFile('jobs', filename, buffer, mimeType);
 
     return res.status(200).json({
       success: true,
@@ -287,19 +296,18 @@ const extractJobsFromFlyer = async (req, res) => {
 
   try {
     const userId = req.user?.id || 'guest';
+    const crypto = require('crypto');
     let buffer = null;
     let mimeType = 'image/jpeg';
-    let filename = `flyer-${userId}-${Date.now()}.jpg`;
+    let ext = '.jpg';
 
     if (req.file) {
       buffer = req.file.buffer || (req.file.path ? fs.readFileSync(req.file.path) : null);
       mimeType = req.file.mimetype || 'image/jpeg';
-      const ext = path.extname(req.file.originalname || '') || '.jpg';
-      filename = `flyer-${userId}-${Date.now()}${ext}`;
+      ext = path.extname(req.file.originalname || '') || '.jpg';
     } else if (req.body?.flyerBase64) {
       const base64Data = req.body.flyerBase64.replace(/^data:image\/\w+;base64,/, '');
       buffer = Buffer.from(base64Data, 'base64');
-      filename = `flyer-${userId}-${Date.now()}.jpg`;
       mimeType = req.body.mimeType || 'image/jpeg';
     } else {
       return res.status(400).json({
@@ -311,6 +319,10 @@ const extractJobsFromFlyer = async (req, res) => {
     if (!buffer || buffer.length === 0) {
       return res.status(400).json({ success: false, message: 'Invalid or empty flyer image file.' });
     }
+
+    // Deduplicate filename by content MD5 hash so same flyer is never re-uploaded multiple times
+    const hash = crypto.createHash('md5').update(buffer).digest('hex').slice(0, 16);
+    const filename = `job-flyer-${userId}-${hash}${ext}`;
 
     // 1. Run AI analysis with automatic multi-model failover
     const geminiService = require('../services/gemini.service');
@@ -406,8 +418,23 @@ const postJob = async (req, res) => {
         venue
       } = item;
 
-      const jobCity = (city || school.city || '').trim();
-      const jobState = (state || school.state || '').trim();
+      // Normalize and sanitize fields with safe fallbacks so no valid vacancy is dropped
+      const rawTitle = (title || '').trim();
+      const rawDesig = (designation || '').trim();
+      const rawSubj = (subject || '').trim() || 'General';
+
+      if (!rawTitle && !rawDesig) {
+        continue;
+      }
+
+      const finalTitle = rawTitle || `${rawDesig} - ${rawSubj}`;
+      const finalDesig = rawDesig || rawTitle;
+      const jobCity = (city || school.city || 'Delhi NCR').trim();
+      const jobState = (state || school.state || 'Delhi').trim();
+      const finalDesc = (description && description.trim())
+        ? description.trim()
+        : `${finalTitle} position at ${school.school_name || 'school campus'}. Direct recruitment on ProHiring.`;
+
       const finalPosterUrl = (posterUrl || poster_url || '').trim() || null;
       const finalPostType = (postType || post_type || 'Teaching Staff').trim();
       const finalStatus = (status === 'draft' || status === 'closed') ? status : 'active';
@@ -420,17 +447,13 @@ const postJob = async (req, res) => {
       const finalInterviewTime = (interviewTime || interview_time || '').trim() || null;
       const finalVenue = (venue || school.address || '').trim() || null;
 
-      if (!title || !designation || !subject || !description || !jobCity || !jobState) {
-        continue;
-      }
-
       const shareCode = crypto.randomBytes(8).toString('hex'); // 16-character unique alphanumeric slug
 
       // Auto-generate SEO Slug: {school-slug}-{designation-slug}-{city-slug}
       const sSlug = school.slug || toSlug(school.school_name) || 'school';
-      const dSlug = toSlug(designation) || 'teacher';
+      const dSlug = toSlug(finalDesig) || toSlug(finalTitle) || 'teacher';
       const cSlug = toSlug(jobCity) || 'india';
-      const subSlug = toSlug(subject);
+      const subSlug = toSlug(rawSubj);
 
       let candidateSlug = `${sSlug}-${dSlug}-${cSlug}`;
       try {
@@ -455,9 +478,9 @@ const postJob = async (req, res) => {
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             school.id,
-            title.trim(),
-            designation.trim(),
-            subject.trim(),
+            finalTitle,
+            finalDesig,
+            rawSubj,
             finalQual,
             finalExp,
             finalSalMin,
@@ -465,7 +488,7 @@ const postJob = async (req, res) => {
             finalSalNeg,
             finalJobType,
             openings || 1,
-            description,
+            finalDesc,
             responsibilities || null,
             benefits || null,
             jobCity,
@@ -492,9 +515,9 @@ const postJob = async (req, res) => {
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
               school.id,
-              title.trim(),
-              designation.trim(),
-              subject.trim(),
+              finalTitle,
+              finalDesig,
+              rawSubj,
               finalQual,
               finalExp,
               finalSalMin,
@@ -502,7 +525,7 @@ const postJob = async (req, res) => {
               finalSalNeg,
               finalJobType,
               openings || 1,
-              description,
+              finalDesc,
               responsibilities || null,
               benefits || null,
               jobCity,
@@ -524,9 +547,9 @@ const postJob = async (req, res) => {
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
               school.id,
-              title.trim(),
-              designation.trim(),
-              subject.trim(),
+              finalTitle,
+              finalDesig,
+              rawSubj,
               finalQual,
               finalExp,
               finalSalMin,
@@ -534,7 +557,7 @@ const postJob = async (req, res) => {
               finalSalNeg,
               finalJobType,
               openings || 1,
-              description,
+              finalDesc,
               responsibilities || null,
               benefits || null,
               jobCity,
