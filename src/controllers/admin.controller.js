@@ -347,11 +347,15 @@ const getAllJobs = async (req, res) => {
 const deleteJob = async (req, res) => {
   try {
     const jobId = req.params.id;
-    // Fetch share code before deletion to remove from Google Indexing
+    // Fetch slug / share code before deletion to remove from Google Indexing
     try {
-      const delRows = await query('SELECT share_code FROM jobs WHERE id = ?', [jobId]);
-      if (delRows.length > 0 && delRows[0].share_code) {
-        notifyJobRemoved(delRows[0].share_code).catch(() => {});
+      const delRows = await query('SELECT slug, share_code FROM jobs WHERE id = ?', [jobId]);
+      if (delRows.length > 0) {
+        const identifier = delRows[0].slug || delRows[0].share_code;
+        if (identifier) notifyJobRemoved(identifier).catch(() => {});
+        if (delRows[0].slug && delRows[0].share_code && delRows[0].slug !== delRows[0].share_code) {
+          notifyJobRemoved(delRows[0].share_code).catch(() => {});
+        }
       }
     } catch (_) {}
     await query('DELETE FROM jobs WHERE id = ?', [jobId]);
@@ -459,12 +463,19 @@ const updateJobStatus = async (req, res) => {
     // Notify Google Indexing API in background
     (async () => {
       try {
-        const jRows = await query('SELECT share_code FROM jobs WHERE id = ?', [jobId]);
-        if (jRows.length > 0 && jRows[0].share_code) {
+        const jRows = await query('SELECT slug, share_code FROM jobs WHERE id = ?', [jobId]);
+        if (jRows.length > 0) {
+          const identifier = jRows[0].slug || jRows[0].share_code;
           if (status === 'active') {
-            await notifyJobPublished(jRows[0].share_code);
+            await notifyJobPublished(identifier);
+            if (jRows[0].slug && jRows[0].share_code && jRows[0].slug !== jRows[0].share_code) {
+              await notifyJobPublished(jRows[0].share_code);
+            }
           } else if (status === 'closed') {
-            await notifyJobRemoved(jRows[0].share_code);
+            await notifyJobRemoved(identifier);
+            if (jRows[0].slug && jRows[0].share_code && jRows[0].slug !== jRows[0].share_code) {
+              await notifyJobRemoved(jRows[0].share_code);
+            }
           }
         }
       } catch (e) {

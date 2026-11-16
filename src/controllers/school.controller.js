@@ -640,15 +640,17 @@ const updateJob = async (req, res) => {
     const userId = req.user.id;
     const jobId = req.params.id;
 
-    const schoolRows = await query('SELECT id FROM school_profiles WHERE user_id = ?', [userId]);
+    const schoolRows = await query('SELECT id, school_name, slug, city, state FROM school_profiles WHERE user_id = ?', [userId]);
     if (schoolRows.length === 0) return res.status(404).json({ success: false, message: 'Profile not found.' });
 
-    const schoolId = schoolRows[0].id;
+    const school = schoolRows[0];
+    const schoolId = school.id;
 
-    const existing = await query('SELECT id FROM jobs WHERE id = ? AND school_id = ?', [jobId, schoolId]);
+    const existing = await query('SELECT id, slug, share_code, title, designation, city FROM jobs WHERE id = ? AND school_id = ?', [jobId, schoolId]);
     if (existing.length === 0) {
       return res.status(404).json({ success: false, message: 'Job not found or access unauthorized.' });
     }
+    const existingJob = existing[0];
 
     const {
       title, designation, subject, qualificationRequired, qualification,
@@ -694,7 +696,14 @@ const updateJob = async (req, res) => {
       ? ((posterUrl || poster_url || '').trim() || null)
       : undefined;
 
-    const finalSlug = slug !== undefined ? (String(slug).trim().toLowerCase().replace(/[^a-z0-9-_]/g, '') || null) : undefined;
+    let finalSlug = slug !== undefined ? (String(slug).trim().toLowerCase().replace(/[^a-z0-9-_]/g, '') || null) : undefined;
+    if (!finalSlug && !existingJob.slug) {
+      const toSlug = (str) => String(str || '').toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+      const sSlug = school.slug || toSlug(school.school_name) || 'school';
+      const dSlug = toSlug(designation || title || existingJob.designation || existingJob.title) || 'teacher';
+      const cSlug = toSlug(city || school.city || existingJob.city) || 'job';
+      finalSlug = `${sSlug}-${dSlug}-${cSlug}`.replace(/--+/g, '-');
+    }
 
     try {
       await query(
@@ -801,16 +810,23 @@ const updateJob = async (req, res) => {
       );
     }
 
-    // Automatically notify Google Indexing API if status changed
+    // Automatically notify Google Indexing API on job update (active -> URL_UPDATED, closed -> URL_DELETED)
     (async () => {
       try {
-        const jRows = await query('SELECT share_code, status FROM jobs WHERE id = ?', [jobId]);
-        if (jRows.length > 0 && jRows[0].share_code) {
+        const jRows = await query('SELECT slug, share_code, status FROM jobs WHERE id = ?', [jobId]);
+        if (jRows.length > 0) {
           const curStatus = jRows[0].status;
+          const identifier = jRows[0].slug || jRows[0].share_code;
           if (curStatus === 'active') {
-            await notifyJobPublished(jRows[0].share_code);
+            await notifyJobPublished(identifier);
+            if (jRows[0].slug && jRows[0].share_code && jRows[0].slug !== jRows[0].share_code) {
+              await notifyJobPublished(jRows[0].share_code);
+            }
           } else if (curStatus === 'closed') {
-            await notifyJobRemoved(jRows[0].share_code);
+            await notifyJobRemoved(identifier);
+            if (jRows[0].slug && jRows[0].share_code && jRows[0].slug !== jRows[0].share_code) {
+              await notifyJobRemoved(jRows[0].share_code);
+            }
           }
         }
       } catch (e) {
