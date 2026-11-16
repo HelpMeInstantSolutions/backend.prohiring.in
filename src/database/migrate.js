@@ -242,7 +242,7 @@ async function runMigration() {
         ['ai_job_extraction_enabled', 'true', 'ai', 1],
         ['gemini_api_key', process.env.GEMINI_API_KEY || '', 'ai', 0],
         ['gemini_project_id', process.env.GEMINI_PROJECT_ID || '457270571268', 'ai', 0],
-        ['gemini_model', 'gemini-3.5-flash', 'ai', 1]
+        ['gemini_model', 'gemini-1.5-flash', 'ai', 1]
       ];
       for (const [key, val, cat, isPub] of aiDefaults) {
         await connection.query(
@@ -255,6 +255,10 @@ async function runMigration() {
           [key, val, cat, isPub]
         );
       }
+      // Migrate any legacy non-existent model name to official active gemini-1.5-flash
+      await connection.query(
+        "UPDATE system_settings SET setting_value = 'gemini-1.5-flash' WHERE setting_key = 'gemini_model' AND (setting_value = 'gemini-3.5-flash' OR setting_value LIKE '%3.5%')"
+      );
     } catch (aiErr) {
       console.warn('Notice during AI settings initialization:', aiErr.message);
     }

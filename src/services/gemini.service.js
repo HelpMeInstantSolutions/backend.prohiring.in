@@ -110,7 +110,7 @@ class GeminiService {
   constructor() {
     this.defaultApiKey = process.env.GEMINI_API_KEY || '';
     this.defaultProjectId = process.env.GEMINI_PROJECT_ID || '457270571268';
-    this.defaultModel = process.env.GEMINI_MODEL || 'gemini-3.5-flash';
+    this.defaultModel = process.env.GEMINI_MODEL || 'gemini-1.5-flash';
   }
 
   /**
@@ -326,29 +326,118 @@ class GeminiService {
   }
 
   /**
-   * Calls Google Gemini generateContent with automatic multi-model failover.
-   * Handles 503 (high demand spikes) and 429 (rate limits) seamlessly by falling back
-   * to alternative active models.
+   * Dynamically queries Google ModelService.ListModels to discover verified active models
+   * for this specific API key, eliminating 404 Model Not Found errors.
+   */
+  async getSupportedModels(apiKey) {
+    if (!apiKey) return [];
+    const versions = ['v1beta', 'v1'];
+    let lastListErr = '';
+
+    for (const v of versions) {
+      try {
+        const url = `https://generativelanguage.googleapis.com/${v}/models?key=${apiKey}`;
+        const res = await fetch(url, {
+          headers: {
+            'x-goog-api-key': apiKey,
+            'Content-Type': 'application/json'
+          }
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          const valid = (data.models || [])
+            .filter((m) => Array.isArray(m.supportedGenerationMethods) && m.supportedGenerationMethods.includes('generateContent'))
+            .map((m) => ({
+              id: m.name.replace(/^models\//, ''),
+              name: m.name,
+              apiVersion: v
+            }));
+
+          if (valid.length > 0) {
+            // Sort: prioritize flash models for high speed and multimodal vision OCR
+            valid.sort((a, b) => {
+              const aFlash = a.id.includes('flash') ? 0 : (a.id.includes('pro') ? 1 : 2);
+              const bFlash = b.id.includes('flash') ? 0 : (b.id.includes('pro') ? 1 : 2);
+              return aFlash - bFlash;
+            });
+            return valid;
+          }
+        } else {
+          const errData = await res.json().catch(() => ({}));
+          lastListErr = errData.error?.message || `HTTP ${res.status}`;
+          console.warn(`[GeminiService] ListModels check on ${v} failed: ${lastListErr}`);
+        }
+      } catch (netErr) {
+        lastListErr = netErr.message;
+        console.warn(`[GeminiService] ListModels network error on ${v}:`, netErr.message);
+      }
+    }
+
+    if (lastListErr) {
+      console.warn('[GeminiService] Notice during ListModels query:', lastListErr);
+    }
+    return [];
+  }
+
+  /**
+   * Calls Google Gemini generateContent with dynamic model discovery and automatic failover.
    */
   async callGeminiWithFailover(apiKey, configuredModel, bodyPayload) {
-    const candidateModels = Array.from(new Set([
-      configuredModel,
-      'gemini-2.5-flash',
-      'gemini-2.0-flash',
-      'gemini-1.5-flash',
-      'gemini-1.5-flash-8b',
-      'gemini-flash-latest'
-    ].filter(Boolean)));
+    if (!apiKey) {
+      throw new Error('Google Gemini API Key is missing. Please configure it in Admin Settings.');
+    }
+
+    // 1. Fetch dynamically verified models supported by this specific API key
+    let candidateList = [];
+    try {
+      const dynamicModels = await this.getSupportedModels(apiKey);
+      if (dynamicModels && dynamicModels.length > 0) {
+        candidateList = [...dynamicModels];
+      }
+    } catch (_) {}
+
+    // If configuredModel is set and in candidate list, prioritize it
+    if (configuredModel && candidateList.length > 0) {
+      const cleanConf = configuredModel.replace(/^models\//, '');
+      const foundIdx = candidateList.findIndex(m => m.id === cleanConf);
+      if (foundIdx > 0) {
+        const [found] = candidateList.splice(foundIdx, 1);
+        candidateList.unshift(found);
+      }
+    }
+
+    // Fallback list if ListModels was blocked or returned empty
+    if (candidateList.length === 0) {
+      const fallbackNames = [
+        configuredModel,
+        'gemini-1.5-flash',
+        'gemini-1.5-pro',
+        'gemini-2.0-flash-exp'
+      ].filter(Boolean);
+
+      const uniqueNames = Array.from(new Set(fallbackNames));
+      candidateList = uniqueNames.map(m => ({
+        id: m.replace(/^models\//, ''),
+        apiVersion: 'v1beta'
+      }));
+    }
 
     let lastError = null;
 
-    for (let i = 0; i < candidateModels.length; i++) {
-      const currentModel = candidateModels[i];
+    for (let i = 0; i < candidateList.length; i++) {
+      const item = candidateList[i];
+      const modelId = item.id;
+      const apiVer = item.apiVersion || 'v1beta';
+
       try {
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/${currentModel}:generateContent?key=${apiKey}`;
+        const url = `https://generativelanguage.googleapis.com/${apiVer}/models/${modelId}:generateContent?key=${apiKey}`;
         const res = await fetch(url, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'x-goog-api-key': apiKey,
+            'Content-Type': 'application/json'
+          },
           body: JSON.stringify(bodyPayload)
         });
 
@@ -356,9 +445,14 @@ class GeminiService {
 
         if (!res.ok) {
           const errMsg = data.error?.message || `HTTP ${res.status}`;
-          console.warn(`[GeminiService] Model "${currentModel}" failed (${errMsg}). Trying next candidate model...`);
-          lastError = new Error(`Model "${currentModel}" failed: ${errMsg}`);
-          if (i < candidateModels.length - 1) {
+          console.warn(`[GeminiService] Model "${modelId}" (${apiVer}) failed: ${errMsg}`);
+          lastError = new Error(`Model "${modelId}" failed: ${errMsg}`);
+
+          if (errMsg.toLowerCase().includes('api key not valid') || errMsg.toLowerCase().includes('api_key_invalid')) {
+            throw new Error(`Google Gemini API Key is invalid: ${errMsg}. Please update your API key in Admin Settings.`);
+          }
+
+          if (i < candidateList.length - 1) {
             continue;
           }
           throw lastError;
@@ -366,29 +460,32 @@ class GeminiService {
 
         const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text;
         if (!rawText) {
-          console.warn(`[GeminiService] Model "${currentModel}" returned empty content. Trying next candidate model...`);
-          if (i < candidateModels.length - 1) {
+          console.warn(`[GeminiService] Model "${modelId}" returned empty candidates.`);
+          if (i < candidateList.length - 1) {
             continue;
           }
-          throw new Error(`Model "${currentModel}" returned empty content.`);
+          throw new Error(`Model "${modelId}" returned empty output.`);
         }
 
         return {
-          modelUsed: currentModel,
+          modelUsed: modelId,
           rawText,
           data
         };
       } catch (err) {
         lastError = err;
-        console.warn(`[GeminiService] Model "${currentModel}" request error: ${err.message}. Trying next model...`);
-        if (i < candidateModels.length - 1) {
+        if (err.message.includes('API Key is invalid')) {
+          throw err;
+        }
+        console.warn(`[GeminiService] Model "${modelId}" attempt failed: ${err.message}. Trying next candidate...`);
+        if (i < candidateList.length - 1) {
           continue;
         }
         throw err;
       }
     }
 
-    throw lastError || new Error('All Gemini candidate models failed.');
+    throw lastError || new Error('All Gemini candidate models failed to process the request.');
   }
 
   /**
