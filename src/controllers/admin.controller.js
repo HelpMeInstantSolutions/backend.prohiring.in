@@ -1954,8 +1954,8 @@ const getAllApplications = async (req, res) => {
         t.avatar_url as teacher_avatar,
         t.highest_qualification,
         t.experience_years,
-        t.city as teacher_city,
-        t.state as teacher_state,
+        t.current_city as teacher_city,
+        t.current_state as teacher_state,
         t.resume_url,
         u.email as teacher_email
       FROM job_applications a
