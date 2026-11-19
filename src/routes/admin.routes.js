@@ -37,6 +37,11 @@ router.put('/jobs/:id/status', adminController.updateJobStatus);
 router.get('/jobs', adminController.getAllJobs);
 router.delete('/jobs/:id', adminController.deleteJob);
 
+// Job Applications Management
+router.get('/applications', adminController.getAllApplications);
+router.put('/applications/:id/status', adminController.updateApplicationStatus);
+router.delete('/applications/:id', adminController.deleteApplication);
+
 // Posts, Designations & Subjects Taxonomy Management
 router.get('/taxonomy', adminController.getAdminTaxonomy);
 router.post('/categories', adminController.createCategory);

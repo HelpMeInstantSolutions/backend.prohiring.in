@@ -1873,7 +1873,198 @@ const testGoogleIndexing = async (req, res) => {
   }
 };
 
+// GET /api/v1/admin/applications
+const getAllApplications = async (req, res) => {
+  try {
+    const { status, search, page = 1, limit = 25 } = req.query;
+    const offset = (parseInt(page, 10) - 1) * parseInt(limit, 10);
+
+    const conditions = ['1=1'];
+    const params = [];
+
+    if (status && status !== 'all') {
+      conditions.push('a.status = ?');
+      params.push(status);
+    }
+
+    if (search && search.trim()) {
+      conditions.push('(t.full_name LIKE ? OR u.email LIKE ? OR t.phone LIKE ? OR j.title LIKE ? OR s.school_name LIKE ? OR j.city LIKE ?)');
+      const term = `%${search.trim()}%`;
+      params.push(term, term, term, term, term, term);
+    }
+
+    const whereClause = conditions.join(' AND ');
+
+    // Metrics summary across all applications
+    const [counts] = await query(`
+      SELECT 
+        COUNT(*) as total,
+        COUNT(CASE WHEN status = 'applied' THEN 1 END) as applied_count,
+        COUNT(CASE WHEN status = 'under_review' THEN 1 END) as under_review_count,
+        COUNT(CASE WHEN status = 'shortlisted' THEN 1 END) as shortlisted_count,
+        COUNT(CASE WHEN status = 'interview_scheduled' THEN 1 END) as interview_scheduled_count,
+        COUNT(CASE WHEN status = 'hired' THEN 1 END) as hired_count,
+        COUNT(CASE WHEN status = 'rejected' THEN 1 END) as rejected_count
+      FROM job_applications
+    `);
+
+    // Total filtered count
+    const countRes = await query(
+      `SELECT COUNT(*) as filtered_total 
+       FROM job_applications a
+       JOIN jobs j ON a.job_id = j.id
+       JOIN school_profiles s ON j.school_id = s.id
+       JOIN teacher_profiles t ON a.teacher_id = t.id
+       LEFT JOIN users u ON t.user_id = u.id
+       WHERE ${whereClause}`,
+      params
+    );
+    const filteredTotal = countRes[0]?.filtered_total || 0;
+
+    // Fetch applications with joined job, school, and teacher information
+    const sql = `
+      SELECT 
+        a.id,
+        a.job_id,
+        a.teacher_id,
+        a.cover_note,
+        a.status,
+        a.interview_date,
+        a.interview_notes,
+        a.applied_at,
+        a.updated_at,
+        j.title as job_title,
+        j.designation as job_designation,
+        j.subject as job_subject,
+        j.city as job_city,
+        j.state as job_state,
+        j.salary_min,
+        j.salary_max,
+        j.job_type,
+        j.slug as job_slug,
+        j.share_code as job_share_code,
+        j.status as job_status,
+        s.id as school_id,
+        s.school_name,
+        s.city as school_city,
+        s.state as school_state,
+        s.logo_url as school_logo,
+        t.full_name as teacher_name,
+        t.phone as teacher_phone,
+        t.avatar_url as teacher_avatar,
+        t.highest_qualification,
+        t.experience_years,
+        t.city as teacher_city,
+        t.state as teacher_state,
+        t.resume_url,
+        u.email as teacher_email
+      FROM job_applications a
+      JOIN jobs j ON a.job_id = j.id
+      JOIN school_profiles s ON j.school_id = s.id
+      JOIN teacher_profiles t ON a.teacher_id = t.id
+      LEFT JOIN users u ON t.user_id = u.id
+      WHERE ${whereClause}
+      ORDER BY a.id DESC
+      LIMIT ? OFFSET ?
+    `;
+
+    const applications = await query(sql, [...params, parseInt(limit, 10), parseInt(offset, 10)]);
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        total: filteredTotal,
+        metrics: counts || {},
+        page: parseInt(page, 10),
+        limit: parseInt(limit, 10),
+        totalPages: Math.ceil(filteredTotal / parseInt(limit, 10)),
+        applications
+      }
+    });
+  } catch (error) {
+    console.error('getAllApplications Error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to retrieve applications: ' + error.message
+    });
+  }
+};
+
+// PUT /api/v1/admin/applications/:id/status
+const updateApplicationStatus = async (req, res) => {
+  try {
+    const applicationId = req.params.id;
+    const { status, interview_date, interview_notes } = req.body;
+
+    const validStatuses = ['applied', 'under_review', 'shortlisted', 'interview_scheduled', 'rejected', 'hired'];
+    if (status && !validStatuses.includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid application status provided.'
+      });
+    }
+
+    const updates = [];
+    const params = [];
+
+    if (status) {
+      updates.push('status = ?');
+      params.push(status);
+    }
+    if (interview_date !== undefined) {
+      updates.push('interview_date = ?');
+      params.push(interview_date || null);
+    }
+    if (interview_notes !== undefined) {
+      updates.push('interview_notes = ?');
+      params.push(interview_notes || null);
+    }
+
+    if (updates.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'No fields provided to update.'
+      });
+    }
+
+    params.push(applicationId);
+    await query(`UPDATE job_applications SET ${updates.join(', ')} WHERE id = ?`, params);
+
+    return res.status(200).json({
+      success: true,
+      message: 'Application status updated successfully.'
+    });
+  } catch (error) {
+    console.error('updateApplicationStatus Error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to update application status: ' + error.message
+    });
+  }
+};
+
+// DELETE /api/v1/admin/applications/:id
+const deleteApplication = async (req, res) => {
+  try {
+    const applicationId = req.params.id;
+    await query('DELETE FROM job_applications WHERE id = ?', [applicationId]);
+    return res.status(200).json({
+      success: true,
+      message: 'Application record removed successfully.'
+    });
+  } catch (error) {
+    console.error('deleteApplication Error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to delete application record: ' + error.message
+    });
+  }
+};
+
 module.exports = {
+  getAllApplications,
+  updateApplicationStatus,
+  deleteApplication,
   syncAllJobsToGoogleIndexing,
   testGoogleIndexing,
   getDashboardStats,
