@@ -3,18 +3,9 @@ const router = express.Router();
 const communityController = require('../controllers/community.controller');
 const { authenticate } = require('../middlewares/auth.middleware');
 
-// Optional auth helper: if bearer token present, authenticate, else continue
-const optionalAuth = (req, res, next) => {
-  const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith('Bearer ')) {
-    return authenticate(req, res, next);
-  }
-  next();
-};
-
-// Feed & comments reading (public or personalized if logged in)
-router.get('/posts', optionalAuth, communityController.getPosts);
-router.get('/posts/:id/comments', communityController.getComments);
+// Feed & comments reading strictly requires authentication (logged-in teachers and schools)
+router.get('/posts', authenticate, communityController.getPosts);
+router.get('/posts/:id/comments', authenticate, communityController.getComments);
 
 // Authenticated interactions
 router.post('/posts', authenticate, communityController.createPost);
